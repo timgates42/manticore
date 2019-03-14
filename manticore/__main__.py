@@ -86,6 +86,31 @@ def parse_arguments():
     parser.add_argument('--config', type=str,
                         help='Manticore config file (.yml) to use. (default config file pattern is: ./[.]m[anti]core.yml)')
 
+    detectors = parser.add_argument_group('Detectors')
+
+    detectors.add_argument('--list-ethereum-detectors',
+                           help='List available ethereum detectors',
+                           action=ListEthereumDetectors,
+                           nargs=0,
+                           default=False)
+
+    detectors.add_argument('--list-native-detectors',
+                           help='List available native detectors',
+                           action=ListNativeDetectors,
+                           nargs=0,
+                           default=False)
+
+    detectors.add_argument('--exclude',
+                           help='Comma-separated list of detectors that should be excluded',
+                           action='store',
+                           dest='detectors_to_exclude',
+                           default='')
+
+    detectors.add_argument('--exclude-all',
+                           help='Excludes all detectors',
+                           action='store_true',
+                           default=False)
+
     bin_flags = parser.add_argument_group('Binary flags')
     bin_flags.add_argument('--entrysymbol', type=str, default=None,
                            help='Symbol as entry point')
@@ -124,25 +149,6 @@ def parse_arguments():
     eth_flags.add_argument('--contract', type=str,
                            help='Contract name to analyze in case of multiple contracts')
 
-    eth_detectors = parser.add_argument_group('Ethereum detectors')
-
-    eth_detectors.add_argument('--list-detectors',
-                               help='List available detectors',
-                               action=ListEthereumDetectors,
-                               nargs=0,
-                               default=False)
-
-    eth_detectors.add_argument('--exclude',
-                               help='Comma-separated list of detectors that should be excluded',
-                               action='store',
-                               dest='detectors_to_exclude',
-                               default='')
-
-    eth_detectors.add_argument('--exclude-all',
-                               help='Excludes all detectors',
-                               action='store_true',
-                               default=False)
-
     eth_flags.add_argument('--avoid-constant', action='store_true',
                            help='Avoid exploring constant functions for human transactions')
 
@@ -177,6 +183,13 @@ class ListEthereumDetectors(argparse.Action):
     def __call__(self, parser, *args, **kwargs):
         from .ethereum.cli import get_detectors_classes
         from .utils.command_line import output_detectors
+        output_detectors(get_detectors_classes())
+        parser.exit()
+
+
+class ListNativeDetectors(argparse.Action):
+    def __call__(self, parser, *args, **kwargs):
+        from .native.detectors import get_detectors_classes, output_detectors
         output_detectors(get_detectors_classes())
         parser.exit()
 
