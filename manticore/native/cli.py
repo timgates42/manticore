@@ -1,4 +1,4 @@
-from .detectors import DetectExecuteSymbolicAddress
+from .detectors import DetectArbitraryControlFlowRedirect
 from .manticore import Manticore
 from ..core.plugin import InstructionCounter, Visited, Tracer, RecordSymbolicBranches
 

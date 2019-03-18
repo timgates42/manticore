@@ -6,7 +6,8 @@ import capstone
 from prettytable import PrettyTable
 
 from ..core.plugin import Plugin
-from ..core.smtlib import Constant
+from ..core.smtlib import Constant, Operators
+from ..core.state import ForkState
 from ..utils.helpers import issymbolic
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ classification_txt = {
 
 
 def get_detectors_classes():
-    return [DetectExecuteSymbolicAddress]
+    return [DetectArbitraryControlFlowRedirect]
 
 
 def output_detectors(detector_classes):
@@ -156,9 +157,9 @@ def insn_implicit_redirect(instruction: capstone.CsInsn) -> bool:
     return instruction.mnemonic.lower() in ['call', 'ret']
 
 
-class DetectExecuteSymbolicAddress(Detector):
+class DetectArbitraryControlFlowRedirect(Detector):
     """
-    Detect when PC will execute at a symbolic address.
+    Detect when PC could execute at an arbitrary symbolic address.
 
     This could mean that a buffer has overwritten an address that is being used for execution and may be
     possible to exploit.
@@ -167,6 +168,16 @@ class DetectExecuteSymbolicAddress(Detector):
     HELP = 'A potential, arbitrary, user-controlled control-flow redirection'
     IMPACT = DetectorClassification.HIGH
     CONFIDENCE = DetectorClassification.MEDIUM
+
+    def __init__(self, target_address_list=None):
+        """
+        Detect a symbolic PC register that might be controllable with user input to an arbitrary location.
+
+        :param target_address_list: Initialize this detector with an optional target address list to check for
+        redirection.
+        """
+        super().__init__()
+        self.target_address_list = target_address_list if target_address_list else []
 
     def did_execute_instruction_callback(self, state, pc, target_pc, instruction):
         """
@@ -181,6 +192,32 @@ class DetectExecuteSymbolicAddress(Detector):
         :return: pass
         """
         if issymbolic(target_pc) and insn_implicit_redirect(instruction):
-            finding_message = f'Previous PC was concrete ({pc:0x}); new PC is symbolic. ' \
-                f'Instruction was {instruction.mnemonic.upper()} '
+            finding_message = f'Previous PC was concrete (0x{pc:x}); new PC is symbolic. ' \
+                f'Instruction was {instruction.mnemonic.upper()}.'
+
+            pc_expr = state.cpu.PC
+            reachable_targets = []
+            for target in self.target_address_list:
+                # Exploit if possible
+                if state.can_be_true(pc_expr == target):
+                    finding_message += f' Can reach target 0x{target:x}'
+                    reachable_targets.append(target)
+                else:
+                    finding_message += f' Cannot reach target 0x{target:x}'
+
             self.add_finding(state, pc, finding_message)
+
+            # Fork to target addresses
+            if len(reachable_targets) > 0:
+                def setstate(state, value):
+                    state.cpu.write_register(setstate.reg_name, value)
+
+                setstate.reg_name = 'PC'
+
+                # Add new constraints to guide execution flow to target addresses
+                if len(reachable_targets) >= 2:
+                    expr = Operators.OR(*map(lambda x: pc_expr == x, reachable_targets))
+                elif len(reachable_targets) == 1:
+                    expr = pc_expr == reachable_targets[0]
+                str_targets = [f'0x{target:x}' for target in reachable_targets]
+                raise ForkState(f'Can reach arbitrary target addresses from symbolic PC: {str_targets}', expr)
