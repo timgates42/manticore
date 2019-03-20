@@ -97,6 +97,44 @@ class ManticoreBase(Eventful):
         self._publish('will_generate_testcase', state, testcase, message)
         logger.info(f'Generated testcase No. %d - %s', testcase.num, message)
 
+    def generate_testcase(self, state, message='', only_if=None, name='user'):
+        """
+        Generate a testcase to the workspace for the given program state. The details of what
+        a testcase is depends on the type of Platform the state is, but involves serializing the state,
+        and generating an input (concretizing symbolic variables) to trigger this state.
+
+        The only_if parameter should be a symbolic expression. If this argument is provided, and the expression
+        *can be true* in this state, a testcase is generated such that the expression will be true in the state.
+        If it *is impossible* for the expression to be true in the state, a testcase is not generated.
+
+        This is useful for conveniently checking a particular invariant in a state, and generating a testcase if
+        the invariant can be violated.
+
+        For example, invariant: "balance" must not be 0. We can check if this can be violated and generate a
+        testcase::
+
+            m.generate_testcase(state, 'balance CAN be 0', only_if=balance == 0)
+            # testcase generated with an input that will violate invariant (make balance == 0)
+
+        :param manticore.core.state.State state:
+        :param str message: longer description of the testcase condition
+        :param manticore.core.smtlib.Bool only_if: only if this expr can be true, generate testcase. if is None, generate testcase unconditionally.
+        :param str name: short string used as the prefix for the workspace key (e.g. filename prefix for testcase files)
+        :return: If a testcase was generated
+        :rtype: bool
+        """
+        if only_if is None:
+            self._publish_generate_testcase(state, name, message)
+            return True
+        else:
+            with state as temp_state:
+                temp_state.constrain(only_if)
+                if temp_state.is_feasible():
+                    self._publish_generate_testcase(temp_state, name, message)
+                    return True
+
+        return False
+
     def register_plugin(self, plugin):
         # Global enumeration of valid events
         assert isinstance(plugin, Plugin)
