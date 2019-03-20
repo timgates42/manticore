@@ -195,6 +195,10 @@ class DetectArbitraryControlFlowRedirect(Detector):
             finding_message = f'Previous PC was concrete (0x{pc:x}); new PC is symbolic. ' \
                 f'Instruction was {instruction.mnemonic.upper()}.'
 
+            # Generate a testcase to be inspected later
+            self.manticore.generate_testcase(state, finding_message, name='detector')
+
+            # Check to see if we can reach targets
             pc_expr = state.cpu.PC
             reachable_targets = []
             for target in self.target_address_list:
