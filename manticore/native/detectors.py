@@ -209,15 +209,9 @@ class DetectArbitraryControlFlowRedirect(Detector):
 
             # Fork to target addresses
             if len(reachable_targets) > 0:
-                def setstate(state, value):
-                    state.cpu.write_register(setstate.reg_name, value)
-
-                setstate.reg_name = 'PC'
-
                 # Add new constraints to guide execution flow to target addresses
                 if len(reachable_targets) >= 2:
                     expr = Operators.OR(*map(lambda x: pc_expr == x, reachable_targets))
-                elif len(reachable_targets) == 1:
+                else:  # len(reachable_targets) == 1:
                     expr = pc_expr == reachable_targets[0]
-                str_targets = [f'0x{target:x}' for target in reachable_targets]
-                raise ForkState(f'Can reach arbitrary target addresses from symbolic PC: {str_targets}', expr)
+                state.constrain(expr)
