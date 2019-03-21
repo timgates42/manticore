@@ -7,7 +7,6 @@ from prettytable import PrettyTable
 
 from ..core.plugin import Plugin
 from ..core.smtlib import Constant, Operators
-from ..core.state import ForkState
 from ..utils.helpers import issymbolic
 
 logger = logging.getLogger(__name__)
@@ -143,18 +142,32 @@ class Detector(Plugin):
         return state.context.setdefault('{:s}.locations'.format(self.name), {})[hash_id]
 
 
-def insn_implicit_redirect(instruction: capstone.CsInsn) -> bool:
+def pc_unconstrained_heuristics(state, instruction: capstone.CsInsn) -> bool:
     """
-    Check if this instruction can be used for dynamic control-flow redirection.
+    Heuristics for the symbolic PC register to determine whether the user has "significant" control over redirection.
 
-    Examples of dynamic redirection instructions are `ret`, `call r/m64`, etc. --- Instructions that do not have
-    explicit destinations.
+    The definition of "significant" is not scientific and is as follows:
+        - Arbitrary address that likely won't be a normal valid target (0x5)
 
-    TODO(ekilmer): Figure out how to get a list of these specific instructions in (maybe) an architecture agnostic way.
-    :param instruction: An instruction to check
-    :return: True if instruction uses a dynamic control-flow redirect
+    :param state: The current state of the execution
+    :param instruction: The instruction that made PC symbolic
+    :return: True if sufficiently unconstrained
     """
-    return instruction.mnemonic.lower() in ['call', 'ret']
+    # Check if we can reach an arbitrary target
+    # 5 is chosen because it is small enough to fit in all architecture PC register sizes
+    arbitrary_target = 0x5
+    if state.can_be_true(state.cpu.PC == arbitrary_target):
+        return True
+
+    # Check if the instruction that is calling the symbolic PC can be used for dynamic control-flow redirection.
+    # Examples of dynamic redirection instructions are `ret`, `call r/m64`, etc. --- Instructions that do not have
+    # explicit destinations.
+    # TODO(ekilmer): Figure out how to get a list of these specific instructions in an architecture dependent way.
+    if instruction.mnemonic.lower() in ['call', 'ret']:
+        return True
+
+    # Else our heuristics don't match
+    return False
 
 
 class DetectArbitraryControlFlowRedirect(Detector):
@@ -191,7 +204,7 @@ class DetectArbitraryControlFlowRedirect(Detector):
         :param instruction: Old instruction
         :return: pass
         """
-        if issymbolic(target_pc) and insn_implicit_redirect(instruction):
+        if issymbolic(target_pc) and pc_unconstrained_heuristics(state, instruction):
             finding_message = f'Previous PC was concrete (0x{pc:x}); new PC is symbolic. ' \
                 f'Instruction was {instruction.mnemonic.upper()}.'
 
