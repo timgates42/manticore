@@ -18,6 +18,7 @@ from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
 
 from . import linux_syscalls
+from . linux_syscall_stubs import SyscallStubs
 from ..core.executor import TerminateState
 from ..core.smtlib import ConstraintSet, solver, Operators
 from ..core.smtlib import Expression
@@ -25,7 +26,7 @@ from ..exceptions import SolverError
 from ..native.cpu.abstractcpu import Syscall, ConcretizeArgument, Interruption
 from ..native.cpu.cpufactory import CpuFactory
 from ..native.memory import SMemory32, SMemory64, Memory32, Memory64, LazySMemory32, LazySMemory64
-from ..platforms.platform import Platform, SyscallNotImplemented
+from ..platforms.platform import Platform, SyscallNotImplemented, unimplemented
 from ..utils.helpers import issymbolic
 
 logger = logging.getLogger(__name__)
@@ -320,6 +321,13 @@ class SocketDesc:
         self.socket_type = socket_type
         self.protocol = protocol
 
+    def close(self):
+        '''
+        Doesn't need to do anything for internal SocketDesc type;
+        fixes 'SocketDesc' has no attribute 'close' error.
+        '''
+        pass
+
 
 class Socket:
     def stat(self):
@@ -383,6 +391,12 @@ class Socket:
     def seek(self, *args):
         raise FdError("Invalid lseek() operation on Socket", errno.EINVAL)
 
+    def close(self):
+        '''
+        Doesn't need to do anything; fixes "no attribute 'close'" error.
+        '''
+        pass
+
 
 class Linux(Platform):
     '''
@@ -415,6 +429,7 @@ class Linux(Platform):
         self.disasm = disasm
         self.envp = envp
         self.argv = argv
+        self.stubs = SyscallStubs()
 
         # dict of [int -> (int, int)] where tuple is (soft, hard) limits
         self._rlimits = {
@@ -644,6 +659,7 @@ class Linux(Platform):
         self._function_abi = state['functionabi']
         self._syscall_abi = state['syscallabi']
         self._uname_machine = state['uname_machine']
+        self.stubs = SyscallStubs()
         if '_arm_tls_memory' in state:
             self._arm_tls_memory = state['_arm_tls_memory']
 
@@ -1536,11 +1552,11 @@ class Linux(Platform):
 
         return ret
 
-    def sys_getpid(self, v):
+    def sys_getpid(self):
         logger.debug("GETPID, warning pid modeled as concrete 1000")
         return 1000
 
-    def sys_gettid(self, v):
+    def sys_gettid(self):
         logger.debug("GETTID, warning tid modeled as concrete 1000")
         return 1000
 
@@ -1555,7 +1571,7 @@ class Linux(Platform):
         logger.warning(f"KILL, Ignoring Sending signal {sig} to pid {pid}")
         return 0
 
-    def sys_rt_sigaction(self, signum, act, oldact):
+    def sys_rt_sigaction(self, signum, act, oldact, _sigsetsize):
         """Wrapper for sys_sigaction"""
         return self.sys_sigaction(signum, act, oldact)
 
@@ -1885,30 +1901,6 @@ class Linux(Platform):
         self.current.write_int(user_info, (0x63 - 3) // 8, 32)
         return 0
 
-    def sys_getpriority(self, which, who):
-        '''
-        System call ignored.
-        :rtype: int
-
-        :return: C{0}
-        '''
-        logger.warning("Unimplemented system call: sys_get_priority")
-        return 0
-
-    def sys_setpriority(self, which, who, prio):
-        '''
-        System call ignored.
-        :rtype: int
-
-        :return: C{0}
-        '''
-        logger.warning("Unimplemented system call: sys_setpriority")
-        return 0
-
-    def sys_tgkill(self, tgid, pid, sig):
-        logger.warning("Unimplemented system call: sys_tgkill")
-        return 0
-
     def sys_acct(self, path):
         '''
         System call not implemented.
@@ -1930,37 +1922,8 @@ class Linux(Platform):
         '''
         return self._exit(f"Program finished with exit status: {ctypes.c_int32(error_code).value}")
 
-    def sys_ptrace(self, request, pid, addr, data):
-        logger.warning("Unimplemented system call: sys_ptrace")
-        return 0
-
-    def sys_nanosleep(self, req, rem):
-        logger.warning("Unimplemented system call: sys_nanosleep")
-        return 0
-
     def sys_set_tid_address(self, tidptr):
         return 1000  # tha pid
-
-    def sys_faccessat(self, dirfd, pathname, mode, flags):
-        logger.warning("Unimplemented system call: sys_faccessat")
-        filename = self.current.read_string(pathname)
-        return -1
-
-    def sys_set_robust_list(self, head, length):
-        logger.warning("Unimplemented system call: sys_set_robust_list")
-        return -1
-
-    def sys_sysinfo(self, infop):
-        logger.warning("Unimplemented system call: sys_sysinfo")
-        return -1
-
-    def sys_futex(self, uaddr, op, val, timeout, uaddr2, val3):
-        logger.warning("Unimplemented system call: sys_futex")
-        return 0
-
-    def sys_setrlimit(self, resource, rlim):
-        logger.warning("Unimplemented system call: sys_setrlimit")
-        return -1
 
     def sys_getrlimit(self, resource, rlim):
         ret = -1
@@ -1982,18 +1945,6 @@ class Linux(Platform):
         else:
             logger.warning("Cowardly refusing to set resource limits for process %d", pid)
         return ret
-
-    def sys_gettimeofday(self, tv, tz):
-        logger.warning("Unimplemented system call: sys_gettimeofday")
-        return 0
-
-    def sys_clone_ptregs(self, flags, child_stack, ptid, ctid, regs):
-        logger.warning("Unimplemented system call: sys_clone/ptregs")
-        return 1000
-
-    def sys_mkdir(self, pathname, mode):
-        logger.warning("Unimplemented system call: sys_mkdir")
-        return 0
 
     def sys_madvise(self, infop):
         logger.info("Ignoring sys_madvise")
@@ -2032,7 +1983,14 @@ class Linux(Platform):
     def sys_listen(self, sockfd, backlog):
         return self._is_sockfd(sockfd)
 
-    def sys_accept(self, sockfd, addr, addrlen, flags):
+    def sys_accept(self, sockfd, addr, addrlen):
+        '''
+        https://github.com/torvalds/linux/blob/63bdf4284c38a48af21745ceb148a087b190cd21/net/socket.c#L1649-L1653
+        '''
+        return self.sys_accept4(sockfd, addr, addrlen, 0)
+
+    def sys_accept4(self, sockfd, addr, addrlen, flags):
+        # TODO: ehennenfent - Only handles the flags=0 (sys_accept) case
         ret = self._is_sockfd(sockfd)
         if ret != 0:
             return ret
@@ -2119,6 +2077,28 @@ class Linux(Platform):
 
         return size
 
+    @unimplemented
+    def sys_futex(self, uaddr, op, val, utime, uaddr2, val3) -> int:
+        '''
+        Fast user-space locking
+        success: Depends on the operation, but often 0
+        error: Returns -1
+        '''
+        return 0
+
+    @unimplemented
+    def sys_clone_ptregs(self, flags, child_stack, ptid, ctid, regs):
+        '''
+        Create a child process
+        :param flags:
+        :param child_stack:
+        :param ptid:
+        :param ctid:
+        :param regs:
+        :return: The PID of the child process
+        '''
+        return self.sys_getpid()
+
     # Dispatchers...
     def syscall(self):
         '''
@@ -2130,7 +2110,10 @@ class Linux(Platform):
         try:
             table = getattr(linux_syscalls, self.current.machine)
             name = table.get(index, None)
-            implementation = getattr(self, name)
+            if hasattr(self, name):
+                implementation = getattr(self, name)
+            else:
+                implementation = getattr(self.stubs, name)
         except (AttributeError, KeyError):
             if name is not None:
                 raise SyscallNotImplemented(index, name)
@@ -2142,8 +2125,8 @@ class Linux(Platform):
     def sys_clock_gettime(self, clock_id, timespec):
         logger.warning("sys_clock_time not really implemented")
         if clock_id == 1:
-            t = int(time.monotonic() * 1000000000)
-            self.current.write_bytes(timespec, struct.pack('l', t // 1000000000) + struct.pack('l', t))
+            t = int(time.monotonic() * 1000000000)  # switch to monotonic_ns in py3.7
+            self.current.write_bytes(timespec, struct.pack('I', t // 1000000000) + struct.pack('I', t))
         return 0
 
     def sys_time(self, tloc):
@@ -2152,6 +2135,19 @@ class Linux(Platform):
         if tloc != 0:
             self.current.write_int(tloc, int(t), self.current.address_bit_size)
         return int(t)
+
+    def sys_gettimeofday(self, tv, tz) -> int:
+        '''
+        Get time
+        success: Returns 0
+        error: Returns -1
+        '''
+        if tv != 0:
+            microseconds = int(time.time() * 10 ** -6)
+            self.current.write_bytes(tv, struct.pack('I', microseconds // (10 ** 6)) + struct.pack('I', microseconds))
+        if tz != 0:
+            logger.warning("No support for time zones in sys_gettimeofday")
+        return 0
 
     def sched(self):
         ''' Yield CPU.
@@ -2457,6 +2453,67 @@ class Linux(Platform):
         self.sys_close(fd)
         return ret
 
+    # @unimplemented
+    def sys_mkdir(self, pathname, mode) -> int:
+        '''
+        Create a directory
+        success: Returns 0
+        error: Returns -1
+        '''
+        name = self.current.read_string(pathname)
+        os.mkdir(name, mode=mode)
+
+        return -1
+
+    # @unimplemented
+    def sys_mkdirat(self, dfd, pathname, mode) -> int:
+        '''
+        Create a directory
+        success: Returns 0
+        error: Returns -1
+        '''
+        name = self.current.read_string(pathname)
+        os.mkdirat(name, mode=mode, dir_fd=dfd)
+
+        return -1
+
+    # @unimplemented
+    def sys_rmdir(self, pathname) -> int:
+        '''
+        Delete a directory
+        success: Returns 0
+        error: Returns -1
+        '''
+        name = self.current.read_string(pathname)
+        os.rmdir(name)
+
+        return -1
+
+    def sys_pipe(self, filedes) -> int:
+        '''
+        Create pipe
+        success: Returns 0
+        error: Returns -1
+        '''
+        return self.sys_pipe2(filedes, 0)
+
+
+    def sys_pipe2(self, filedes, flags) -> int:
+        '''
+        # TODO (ehennenfent) create a native pipe type instead of cheating with sockets
+        Create pipe
+        success: Returns 0
+        error: Returns -1
+        '''
+        if flags == 0:
+            l, r = Socket.pair()
+            self.current.write_int(filedes, self._open(l))
+            self.current.write_int(filedes+4, self._open(r))
+        else:
+            logger.warning("sys_pipe2 doesn't handle flags")
+            return -1
+
+
     def _arch_specific_init(self):
         assert self.arch in {'i386', 'amd64', 'armv7'}
 
@@ -2646,16 +2703,16 @@ class SLinux(Linux):
 
         return super().sys_recv(sockfd, buf, count, flags)
 
-    def sys_accept(self, sockfd, addr, addrlen, flags):
+    def sys_accept(self, sockfd, addr, addrlen):
         # TODO(yan): Transmit some symbolic bytes as soon as we start.
         # Remove this hack once no longer needed.
 
-        fd = super().sys_accept(sockfd, addr, addrlen, flags)
+        fd = super().sys_accept(sockfd, addr, addrlen)
         if fd < 0:
             return fd
         sock = self._get_fd(fd)
         nbytes = 32
-        symb = self.constraints.new_array(name='socket', index_max=nbytes)
+        symb = self.constraints.new_array(name=f'socket{fd}', index_max=nbytes)
         for i in range(nbytes):
             sock.buffer.append(symb[i])
         return fd
