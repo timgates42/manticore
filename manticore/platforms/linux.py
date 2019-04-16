@@ -343,12 +343,15 @@ class Socket:
         a.connect(b)
         return a, b
 
-    def __init__(self):
+    def __init__(self, recv_symbolic=True, max_recv_symbolic=80):
         self.buffer = []  # queue os bytes
+        self.recv_buffs = []  # A list of list of inputs in order
         self.peer = None
+        self.recv_symbolic = recv_symbolic  # Whether to have all symbolic receives
+        self.max_recv_symbolic = max_recv_symbolic  # 0 for unlimited
 
     def __repr__(self):
-        return f"SOCKET({hash(self):x}, {self.buffer!r}, {hash(self.peer):x})"
+        return f"SOCKET({hash(self):x}, {self.buffer!r}, {self.recv_buffs!r}, {hash(self.peer):x})"
 
     def is_connected(self):
         return self.peer is not None
@@ -371,9 +374,8 @@ class Socket:
 
     def receive(self, size):
         rx_bytes = min(size, len(self.buffer))
-        ret = []
-        for i in range(rx_bytes):
-            ret.append(self.buffer.pop())
+        ret = self.buffer[:rx_bytes]
+        self.recv_buffs.append(ret)
         return ret
 
     def write(self, buf):
@@ -2014,6 +2016,21 @@ class Linux(Platform):
 
         return len(data)
 
+    def sys_recvfrom(self, sockfd, buf, count, flags, src_addr, addrlen):
+        try:
+            sock = self.files[sockfd]
+        except IndexError:
+            return -errno.EINVAL
+
+        if not isinstance(sock, Socket):
+            return -errno.ENOTSOCK
+
+        data = sock.read(count)
+        self.current.write_bytes(buf, data)
+        self.syscall_trace.append(("_recvfrom", sockfd, data))
+
+        return len(data)
+
     def sys_send(self, sockfd, buf, count, flags):
         try:
             sock = self.files[sockfd]
@@ -2026,6 +2043,20 @@ class Linux(Platform):
         data = self.current.read_bytes(buf, count)
         # XXX(yan): send(2) is currently a nop; we don't communicate yet
         self.syscall_trace.append(("_send", sockfd, data))
+
+        return count
+
+    def sys_sendto(self, sockfd, buf, count, flags, dest_addr, addrlen):
+        try:
+            sock = self.files[sockfd]
+        except IndexError:
+            return -errno.EINVAL
+
+        if not isinstance(sock, Socket):
+            return -errno.ENOTSOCK
+
+        data = self.current.read_bytes(buf, count)
+        self.syscall_trace.append(("_sendto", sockfd, data))
 
         return count
 
@@ -2684,6 +2715,23 @@ class SLinux(Linux):
 
         return super().sys_write(fd, buf, count)
 
+    def _recv_symbolic_sock(self, sockfd, count):
+        """
+        Receive symbolic bytes on socket if no data there currently.
+        :param sockfd: Socket descriptor to look up
+        :param count: Number of bytes as provided to syscall
+        :return: count of symbolic bytes
+        """
+        sock = self._get_fd(sockfd)
+        if sock.is_empty() and sock.recv_symbolic:
+            nbytes = count if sock.max_recv_symbolic == 0 else min(sock.max_recv_symbolic, count)
+            symb = self.constraints.new_array(name=f'socket{sockfd}-{len(sock.recv_buffs)}', index_max=nbytes)
+            for i in range(nbytes):
+                sock.buffer.append(symb[i])
+            logger.info(f'Returning {nbytes} from socket recv')
+            return nbytes
+        return 0
+
     def sys_recv(self, sockfd, buf, count, flags):
         if issymbolic(sockfd):
             logger.debug("Ask to read from a symbolic file descriptor!!")
@@ -2701,21 +2749,41 @@ class SLinux(Linux):
             logger.debug("Submitted a symbolic flags")
             raise ConcretizeArgument(self, 3)
 
+        self._recv_symbolic_sock(sockfd, count)
+
         return super().sys_recv(sockfd, buf, count, flags)
 
-    def sys_accept(self, sockfd, addr, addrlen):
-        # TODO(yan): Transmit some symbolic bytes as soon as we start.
-        # Remove this hack once no longer needed.
+    def sys_recvfrom(self, sockfd, buf, count, flags, src_addr, addrlen):
+        if issymbolic(sockfd):
+            logger.debug("Ask to read from a symbolic file descriptor!!")
+            raise ConcretizeArgument(self, 0)
 
-        fd = super().sys_accept(sockfd, addr, addrlen)
-        if fd < 0:
-            return fd
-        sock = self._get_fd(fd)
-        nbytes = 32
-        symb = self.constraints.new_array(name=f'socket{fd}', index_max=nbytes)
-        for i in range(nbytes):
-            sock.buffer.append(symb[i])
-        return fd
+        if issymbolic(buf):
+            logger.debug("Ask to read to a symbolic buffer")
+            raise ConcretizeArgument(self, 1)
+
+        if issymbolic(count):
+            logger.debug("Ask to read a symbolic number of bytes ")
+            raise ConcretizeArgument(self, 2)
+
+        if issymbolic(flags):
+            logger.debug("Submitted a symbolic flags")
+            raise ConcretizeArgument(self, 3)
+
+        if issymbolic(src_addr):
+            logger.debug("Submitted a symbolic source address")
+            raise ConcretizeArgument(self, 4)
+
+        if issymbolic(addrlen):
+            logger.debug("Submitted a symbolic address length")
+            raise ConcretizeArgument(self, 5)
+
+        self._recv_symbolic_sock(sockfd, count)
+
+        return super().sys_recvfrom(sockfd, buf, count, flags, src_addr, addrlen)
+
+    def sys_accept(self, sockfd, addr, addrlen):
+        return super().sys_accept(sockfd, addr, addrlen)
 
     def sys_open(self, buf, flags, mode):
         '''
@@ -2821,7 +2889,7 @@ class SLinux(Linux):
                     solve_to_fd(data, out)
                 elif fd == 2:
                     solve_to_fd(data, err)
-            if name in ('_recv'):
+            if name in ('_recv', '_recvfrom'):
                 solve_to_fd(data, net)
             if name in ('_receive', '_read') and fd == 0:
                 solve_to_fd(data, inn)

@@ -404,6 +404,9 @@ class SyscallAbi(Abi):
         # invoke() will call get_argument_values()
         self._last_arguments = ()
 
+        if platform_logger.isEnabledFor(logging.DEBUG):
+            platform_logger.debug(f'0x{self._cpu.PC:x}: Calling {model.__func__.__name__}')
+
         ret = super().invoke(model, prefix_args)
 
         if platform_logger.isEnabledFor(logging.DEBUG):
@@ -424,12 +427,11 @@ class SyscallAbi(Abi):
                 args.append(arg_s)
 
             args_s = ', '.join(args)
-
             ret_s = f'{ret}'
             if ret > min_hex_expansion:
                 ret_s = ret_s + f'(0x{ret:x})'
 
-            platform_logger.debug('%s(%s) -> %s', model.__func__.__name__, repr(args_s), ret_s)
+            platform_logger.debug('0x%x: Result - %s(%s) -> %s', self._cpu.PC, model.__func__.__name__, repr(args_s), ret_s)
 
 ############################################################################
 # Abstract cpu encapsulating common cpu methods used by platforms and executor.
