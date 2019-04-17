@@ -431,7 +431,7 @@ class Linux(Platform):
         self.disasm = disasm
         self.envp = envp
         self.argv = argv
-        self.stubs = SyscallStubs()
+        self.stubs = SyscallStubs(parent=self)
 
         # dict of [int -> (int, int)] where tuple is (soft, hard) limits
         self._rlimits = {
@@ -661,7 +661,7 @@ class Linux(Platform):
         self._function_abi = state['functionabi']
         self._syscall_abi = state['syscallabi']
         self._uname_machine = state['uname_machine']
-        self.stubs = SyscallStubs()
+        self.stubs = SyscallStubs(parent=self)
         if '_arm_tls_memory' in state:
             self._arm_tls_memory = state['_arm_tls_memory']
 
@@ -1373,6 +1373,8 @@ class Linux(Platform):
         if os.access(filename, mode):
             return 0
         else:
+            if not os.path.exists(filename):
+                return -2  # Decodes to ENOENT
             return -1
 
     def sys_newuname(self, old_utsname):
@@ -2494,7 +2496,7 @@ class Linux(Platform):
         name = self.current.read_string(pathname)
         os.mkdir(name, mode=mode)
 
-        return -1
+        return 0
 
     # @unimplemented
     def sys_mkdirat(self, dfd, pathname, mode) -> int:
@@ -2506,7 +2508,7 @@ class Linux(Platform):
         name = self.current.read_string(pathname)
         os.mkdirat(name, mode=mode, dir_fd=dfd)
 
-        return -1
+        return 0
 
     # @unimplemented
     def sys_rmdir(self, pathname) -> int:
@@ -2528,7 +2530,6 @@ class Linux(Platform):
         '''
         return self.sys_pipe2(filedes, 0)
 
-
     def sys_pipe2(self, filedes, flags) -> int:
         '''
         # TODO (ehennenfent) create a native pipe type instead of cheating with sockets
@@ -2539,11 +2540,10 @@ class Linux(Platform):
         if flags == 0:
             l, r = Socket.pair()
             self.current.write_int(filedes, self._open(l))
-            self.current.write_int(filedes+4, self._open(r))
+            self.current.write_int(filedes + 4, self._open(r))
         else:
             logger.warning("sys_pipe2 doesn't handle flags")
             return -1
-
 
     def _arch_specific_init(self):
         assert self.arch in {'i386', 'amd64', 'armv7'}
