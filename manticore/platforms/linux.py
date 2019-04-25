@@ -70,7 +70,10 @@ class File:
         # TODO: assert file is seekable; otherwise we should save what was
         # read from/written to the state
         mode = mode_from_flags(flags)
-        self.file = open(path, mode)
+        if mode == 'rb+' and not os.path.exists(path):
+            self.file = open(path, 'wb+')
+        else:
+            self.file = open(path, mode)
 
     def __getstate__(self):
         state = {
@@ -2160,7 +2163,7 @@ class Linux(Platform):
         logger.warning("sys_clock_time not really implemented")
         if clock_id == 1:
             t = int(time.monotonic() * 1000000000)  # switch to monotonic_ns in py3.7
-            self.current.write_bytes(timespec, struct.pack('I', t // 1000000000) + struct.pack('I', t))
+            self.current.write_bytes(timespec, struct.pack('L', t // 1000000000) + struct.pack('L', t))
         return 0
 
     def sys_time(self, tloc):
@@ -2177,8 +2180,8 @@ class Linux(Platform):
         error: Returns -1
         '''
         if tv != 0:
-            microseconds = int(time.time() * 10 ** -6)
-            self.current.write_bytes(tv, struct.pack('I', microseconds // (10 ** 6)) + struct.pack('I', microseconds))
+            microseconds = int(time.time() * 10 ** 6)
+            self.current.write_bytes(tv, struct.pack('L', microseconds // (10 ** 6)) + struct.pack('L', microseconds))
         if tz != 0:
             logger.warning("No support for time zones in sys_gettimeofday")
         return 0
@@ -2545,6 +2548,86 @@ class Linux(Platform):
         else:
             logger.warning("sys_pipe2 doesn't handle flags")
             return -1
+
+    def sys_ftruncate(self, fd, length) -> int:
+        '''
+        Truncate a file to a specified length
+        success: Returns 0
+        error: Returns -1
+        '''
+        try:
+            file = self._get_fd(fd)
+        except FdError as e:
+            logger.info("File descriptor %s is not open", fd)
+            return -e.err
+        file.file.truncate(length)
+        return 0
+
+    def sys_link(self, oldname, newname) -> int:
+        '''
+        Make a new name for a file
+        success: Returns 0
+        error: Returns -1
+        '''
+        oldname = self.current.read_string(oldname)
+        newname = self.current.read_string(newname)
+        try:
+            os.link(oldname, newname)
+        except Exception as e:
+            return -e.errno
+        return 0
+
+    def sys_unlink(self, pathname) -> int:
+        '''
+        Delete a name and possibly the file it refers to
+        success: Returns 0
+        error: Returns -1
+        '''
+        pathname = self.current.read_string(pathname)
+        try:
+            os.unlink(pathname)
+        except Exception as e:
+            return -e.errno
+        return 0
+
+    def sys_getdents(self, fd, dirent, count) -> int:
+        '''
+        Get directory entries
+        success: Returns the number of bytes read - On end of directory, 0
+        error: Returns -1
+        '''
+        buf = b''
+        try:
+            file = self._get_fd(fd)
+        except FdError as e:
+            logger.info("File descriptor %s is not open", fd)
+            return -e.err
+        if not isinstance(file, Directory):
+            logger.info("Can't get directory entries for a file")
+            return -1
+
+        with os.scandir(file.path) as dent_iter:
+            for index, item in zip(range(count), dent_iter):
+                fmt = f'LLH{len(item.name) + 1}sxc'
+                size = struct.calcsize(fmt)
+
+                stat = item.stat()
+                print("FILE MODE:", item.name, " :: ", stat.st_mode)
+
+                buf += struct.pack(fmt, item.inode(), size, size, bytes(item.name, 'utf-8') + b'\x00', b'\x00')
+
+
+        self.current.write_bytes(dirent, buf)
+        return len(buf)
+
+    def sys_nanosleep(self, rqtp, rmtp) -> int:
+        '''
+        High-resolution sleep
+        success: Returns 0
+        error: Returns -1
+        '''
+        logger.info("Ignoring call to sys_nanosleep")
+        return 0
 
     def _arch_specific_init(self):
         assert self.arch in {'i386', 'amd64', 'armv7'}
