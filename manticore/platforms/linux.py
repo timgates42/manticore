@@ -2716,6 +2716,71 @@ class SLinux(Linux):
 
         return super().sys_write(fd, buf, count)
 
+    def sys_send(self, sockfd, buf, count, flags):
+        if issymbolic(sockfd):
+            logger.debug("Ask to send to a symbolic socket descriptor!!")
+            raise ConcretizeArgument(self, 0)
+
+        if issymbolic(buf):
+            logger.debug("Ask to send to a symbolic buffer")
+            raise ConcretizeArgument(self, 1)
+
+        if issymbolic(count):
+            logger.debug("Ask to send a symbolic number of bytes ")
+            raise ConcretizeArgument(self, 2)
+
+        if issymbolic(flags):
+            logger.debug("Ask to send with symbolic flags value ")
+            raise ConcretizeArgument(self, 3)
+
+        return super().sys_send(sockfd, buf, count, flags)
+
+    def sys_sendto(self, sockfd, buf, count, flags, dest_addr, addrlen):
+        if issymbolic(sockfd):
+            logger.debug("Ask to sendto to a symbolic socket descriptor!!")
+            raise ConcretizeArgument(self, 0)
+
+        if issymbolic(buf):
+            logger.debug("Ask to sendto to a symbolic buffer")
+            raise ConcretizeArgument(self, 1)
+
+        if issymbolic(count):
+            logger.debug("Ask to sendto a symbolic number of bytes ")
+            raise ConcretizeArgument(self, 2)
+
+        if issymbolic(flags):
+            logger.debug("Ask to sendto with symbolic flags value ")
+            raise ConcretizeArgument(self, 3)
+
+        if issymbolic(dest_addr):
+            logger.debug("Ask to sendto to symbolic dest_addr value ")
+            raise ConcretizeArgument(self, 4)
+
+        if issymbolic(flags):
+            logger.debug("Ask to sendto with symbolic addrlen value ")
+            raise ConcretizeArgument(self, 5)
+
+        return super().sys_sendto(sockfd, buf, count, flags, dest_addr, addrlen)
+
+    def sys_sendfile(self, out_fd, in_fd, offset_p, count):
+        if issymbolic(out_fd):
+            logger.debug("Ask to sendfile to a symbolic output file descriptor!!")
+            raise ConcretizeArgument(self, 0)
+
+        if issymbolic(in_fd):
+            logger.debug("Ask to sendfile from a symbolic input file descriptor!!")
+            raise ConcretizeArgument(self, 1)
+
+        if issymbolic(offset_p):
+            logger.debug("Ask to sendfile with symbolic offset value ")
+            raise ConcretizeArgument(self, 2)
+
+        if issymbolic(count):
+            logger.debug("Ask to sendfile a symbolic number of bytes ")
+            raise ConcretizeArgument(self, 3)
+
+        return super().sys_sendfile(out_fd, in_fd, offset_p, count)
+
     def _recv_symbolic_sock(self, sockfd, count):
         """
         Receive symbolic bytes on socket if no data there currently.
