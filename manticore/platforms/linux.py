@@ -375,6 +375,7 @@ class Socket:
     def receive(self, size):
         rx_bytes = min(size, len(self.buffer))
         ret = self.buffer[:rx_bytes]
+        self.buffer = self.buffer[rx_bytes:]
         self.recv_buffs.append(ret)
         return ret
 
@@ -2725,7 +2726,8 @@ class SLinux(Linux):
         sock = self._get_fd(sockfd)
         if sock.is_empty() and sock.recv_symbolic:
             nbytes = count if sock.max_recv_symbolic == 0 else min(sock.max_recv_symbolic, count)
-            symb = self.constraints.new_array(name=f'socket{sockfd}-{len(sock.recv_buffs)}', index_max=nbytes)
+            symb = self.constraints.new_array(name=f'socket{sockfd}-{len(sock.recv_buffs)}', index_max=nbytes,
+                                              avoid_collisions=True)
             for i in range(nbytes):
                 sock.buffer.append(symb[i])
             logger.info(f'Returning {nbytes} from socket recv')
