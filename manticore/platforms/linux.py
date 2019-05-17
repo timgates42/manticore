@@ -19,9 +19,9 @@ from elftools.elf.sections import SymbolTableSection
 
 from . import linux_syscalls
 from . linux_syscall_stubs import SyscallStubs
-from ..core.executor import TerminateState
-from ..core.smtlib import ConstraintSet, solver, Operators
-from ..core.smtlib import Expression
+from ..core.state import TerminateState
+from ..core.smtlib import ConstraintSet, Operators, Expression
+from ..core.smtlib.solver import Z3Solver
 from ..exceptions import SolverError
 from ..native.cpu.abstractcpu import Syscall, ConcretizeArgument, Interruption
 from ..native.cpu.cpufactory import CpuFactory
@@ -116,14 +116,17 @@ class File:
         return self.file.closed
 
     def stat(self):
-        return os.fstat(self.fileno())
+        try:
+            return os.fstat(self.fileno())
+        except OSError as e:
+            return -e.errno
 
     def ioctl(self, request, argp):
         try:
             return fcntl.fcntl(self, request, argp)
-        except OSError:
+        except OSError as e:
             logger.error(f"Invalid Fcntl request: {request}")
-            return -1
+            return -e.errno
 
     def tell(self, *args):
         return self.file.tell(*args)
@@ -147,9 +150,9 @@ class File:
         return False
 
     def sync(self):
-        '''
+        """
         Flush buffered data. Currently not implemented.
-        '''
+        """
         return
 
 
@@ -193,20 +196,23 @@ class Directory(File):
         raise FdError("Is a directory", errno.EISDIR)
 
     def close(self, *args):
-        return os.close(self.fd)
+        try:
+            return os.close(self.fd)
+        except OSError as e:
+            return -e.errno
 
     def fileno(self, *args):
         return self.fd
 
 
 class SymbolicFile(File):
-    '''
+    """
     Represents a symbolic file.
-    '''
+    """
 
     def __init__(self, constraints, path="sfile", mode='rw', max_size=100,
                  wildcard='+'):
-        '''
+        """
         Builds a symbolic file
 
         :param constraints: the SMT constraints
@@ -214,7 +220,7 @@ class SymbolicFile(File):
         :param str mode: the access permissions of the symbolic file
         :param max_size: Maximum amount of bytes of the symbolic file
         :param str wildcard: Wildcard to be used in symbolic file
-        '''
+        """
         super().__init__(path, mode)
 
         # read the concrete data using the parent the read() form the File class
@@ -259,20 +265,20 @@ class SymbolicFile(File):
         super().__setstate__(state)
 
     def tell(self):
-        '''
+        """
         Returns the read/write file offset
         :rtype: int
         :return: the read/write file offset.
-        '''
+        """
         return self.pos
 
     def seek(self, offset, whence=os.SEEK_SET):
-        '''
+        """
         Repositions the file C{offset} according to C{whence}.
         Returns the resulting offset or -1 in case of error.
         :rtype: int
         :return: the file offset.
-        '''
+        """
         assert isinstance(offset, int)
         assert whence in (os.SEEK_SET, os.SEEK_CUR, os.SEEK_END)
 
@@ -292,11 +298,11 @@ class SymbolicFile(File):
         return self.pos
 
     def read(self, count):
-        '''
+        """
         Reads up to C{count} bytes from the file.
         :rtype: list
         :return: the list of symbolic bytes read
-        '''
+        """
         if self.pos > self.max_size:
             return []
         else:
@@ -306,18 +312,18 @@ class SymbolicFile(File):
             return ret
 
     def write(self, data):
-        '''
+        """
         Writes the symbolic bytes in C{data} onto the file.
-        '''
+        """
         size = min(len(data), self.max_size - self.pos)
         for i in range(self.pos, self.pos + size):
             self.array[i] = data[i - self.pos]
 
 
 class SocketDesc:
-    '''
+    """
     Represents a socket descriptor (i.e. value returned by socket(2)
-    '''
+    """
 
     def __init__(self, domain=None, socket_type=None, protocol=None):
         self.domain = domain
@@ -325,10 +331,10 @@ class SocketDesc:
         self.protocol = protocol
 
     def close(self):
-        '''
+        """
         Doesn't need to do anything for internal SocketDesc type;
         fixes 'SocketDesc' has no attribute 'close' error.
-        '''
+        """
         pass
 
 
@@ -398,23 +404,23 @@ class Socket:
         raise FdError("Invalid lseek() operation on Socket", errno.EINVAL)
 
     def close(self):
-        '''
+        """
         Doesn't need to do anything; fixes "no attribute 'close'" error.
-        '''
+        """
         pass
 
 
 class Linux(Platform):
-    '''
+    """
     A simple Linux Operating System Platform.
     This class emulates the most common Linux system calls
-    '''
+    """
 
     # from /usr/include/asm-generic/resource.h
     FCNTL_FDCWD = -100  # /* Special value used to indicate openat should use the cwd */
 
     def __init__(self, program, argv=None, envp=None, disasm='capstone', **kwargs):
-        '''
+        """
         Builds a Linux OS platform
         :param string program: The path to ELF binary
         :param string disasm: Disassembler to be used
@@ -422,7 +428,7 @@ class Linux(Platform):
         :param list envp: The ENV variables.
         :ivar files: List of active file descriptors
         :type files: list[Socket] or list[File]
-        '''
+        """
         super().__init__(path=program, **kwargs)
 
         self.program = program
@@ -447,7 +453,7 @@ class Linux(Platform):
             self.elf = ELFFile(open(program, 'rb'))
             # FIXME (theo) self.arch is actually mode as initialized in the CPUs,
             # make things consistent and perhaps utilize a global mapping for this
-            self.arch = {'x86': 'i386', 'x64': 'amd64', 'ARM': 'armv7'}[self.elf.get_machine_arch()]
+            self.arch = {'x86': 'i386', 'x64': 'amd64', 'ARM': 'armv7', 'AArch64': 'aarch64'}[self.elf.get_machine_arch()]
 
             self._init_cpu(self.arch)
             self._init_std_fds()
@@ -471,12 +477,12 @@ class Linux(Platform):
 
     @classmethod
     def empty_platform(cls, arch):
-        '''
+        """
         Create a platform without an ELF loaded.
 
         :param str arch: The architecture of the new platform
         :rtype: Linux
-        '''
+        """
         platform = cls(None)
         platform._init_cpu(arch)
         platform._init_std_fds()
@@ -530,13 +536,13 @@ class Linux(Platform):
         return None
 
     def _execve(self, program, argv, envp):
-        '''
+        """
         Load `program` and establish program state, such as stack and arguments.
 
         :param program str: The ELF binary to load
         :param argv list: argv array
         :param envp list: envp array
-        '''
+        """
         argv = [] if argv is None else argv
         envp = [] if envp is None else envp
 
@@ -674,11 +680,11 @@ class Linux(Platform):
             self.forward_events_from(proc)
 
     def _init_arm_kernel_helpers(self):
-        '''
+        """
         ARM kernel helpers
 
         https://www.kernel.org/doc/Documentation/arm/kernel_user_helpers.txt
-        '''
+        """
 
         page_data = bytearray(b'\xf1\xde\xfd\xe7' * 1024)
 
@@ -765,7 +771,7 @@ class Linux(Platform):
         return vdso_addr
 
     def setup_stack(self, argv, envp):
-        '''
+        """
         :param Cpu cpu: The cpu instance
         :param argv: list of parameters for the program to execute.
         :param envp: list of environment variables for the program to execute.
@@ -799,7 +805,7 @@ class Linux(Platform):
 
          (0xc0000000)      < top of stack >              0   (virtual)
          ----------------------------------------------------------------------
-        '''
+        """
         cpu = self.current
 
         # In case setup_stack() is called again, we make sure we're growing the
@@ -898,7 +904,7 @@ class Linux(Platform):
         logger.debug(f"Entry point updated: {elf_entry:016x}")
 
     def load(self, filename, env):
-        '''
+        """
         Loads and an ELF program in memory and prepares the initial CPU state.
         Creates the stack and loads the environment variables and the arguments in it.
 
@@ -908,14 +914,14 @@ class Linux(Platform):
             - 'Not matching cpu': if the program is compiled for a different architecture
             - 'Not matching memory': if the program is compiled for a different address size
         :todo: define va_randomize and read_implies_exec personality
-        '''
+        """
         # load elf See binfmt_elf.c
         # read the ELF object file
         cpu = self.current
         elf = self.elf
         arch = self.arch
         env = dict(var.split('=') for var in env if '=' in var)
-        addressbitsize = {'x86': 32, 'x64': 64, 'ARM': 32}[elf.get_machine_arch()]
+        addressbitsize = {'x86': 32, 'x64': 64, 'ARM': 32, 'AArch64': 64}[elf.get_machine_arch()]
         logger.debug("Loading %s as a %s elf", filename, arch)
 
         assert elf.header.e_type in ['ET_DYN', 'ET_EXEC', 'ET_CORE']
@@ -937,6 +943,7 @@ class Linux(Platform):
                         interpreter = ELFFile(open(interpreter_path_filename, 'rb'))
                         break
             break
+
         if interpreter is not None:
             assert interpreter.get_machine_arch() == elf.get_machine_arch()
             assert interpreter.header.e_type in ['ET_DYN', 'ET_EXEC']
@@ -1147,13 +1154,13 @@ class Linux(Platform):
         return sdword
 
     def _open(self, f):
-        '''
+        """
         Adds a file descriptor to the current file descriptor list
 
         :rtype: int
         :param f: the file descriptor to add.
         :return: the index of the file descriptor in the file descr. list
-        '''
+        """
         if None in self.files:
             fd = self.files.index(None)
             self.files[fd] = f
@@ -1163,12 +1170,12 @@ class Linux(Platform):
         return fd
 
     def _close(self, fd):
-        '''
+        """
         Removes a file descriptor from the file descriptor list
         :rtype: int
         :param fd: the file descriptor to close.
         :return: C{0} on success.
-        '''
+        """
         try:
             self.files[fd].close()
             self._closed_files.append(self.files[fd])  # Keep track for SymbolicFile testcase generation
@@ -1177,19 +1184,19 @@ class Linux(Platform):
             raise FdError(f"Bad file descriptor ({fd})")
 
     def _dup(self, fd):
-        '''
+        """
         Duplicates a file descriptor
         :rtype: int
         :param fd: the file descriptor to duplicate.
         :return: C{0} on success.
-        '''
+        """
         return self._open(self.files[fd])
 
     def _is_fd_open(self, fd):
-        '''
+        """
         Determines if the fd is within range and in the file descr. list
         :param fd: the file descriptor to check.
-        '''
+        """
         return fd >= 0 and fd < len(self.files) and self.files[fd] is not None
 
     def _get_fd(self, fd):
@@ -1199,10 +1206,10 @@ class Linux(Platform):
             return self.files[fd]
 
     def _transform_write_data(self, data: T) -> T:
-        '''
+        """
         Implement in subclass to transform data written by write(2)/writev(2)
         Nop by default.
-        '''
+        """
         return data
 
     def _exit(self, message):
@@ -1213,33 +1220,36 @@ class Linux(Platform):
             raise TerminateState(message, testcase=True)
 
     def sys_umask(self, mask):
-        '''
+        """
         umask - Set file creation mode mask
         :param int mask: New mask
-        '''
+        """
         logger.debug(f"umask({mask:o})")
-        return os.umask(mask)
+        try:
+            return os.umask(mask)
+        except OSError as e:
+            return -e.errno
 
     def sys_chdir(self, path):
-        '''
+        """
         chdir - Change current working directory
         :param int path: Pointer to path
-        '''
+        """
         path_str = self.current.read_string(path)
         logger.debug(f"chdir({path_str})")
         try:
             os.chdir(path_str)
             return 0
         except OSError as e:
-            return e.errno
+            return -e.errno
 
     def sys_getcwd(self, buf, size):
-        '''
+        """
         getcwd - Get the current working directory
         :param int buf: Pointer to dest array
         :param size: size in bytes of the array pointed to by the buf
         :return: buf (Success), or 0
-        '''
+        """
 
         try:
             current_dir = os.getcwd()
@@ -1262,7 +1272,7 @@ class Linux(Platform):
             return -e.errno
 
     def sys_lseek(self, fd, offset, whence):
-        '''
+        """
         lseek - reposition read/write file offset
 
         The lseek() function repositions the file offset of the open file description associated
@@ -1277,7 +1287,7 @@ class Linux(Platform):
 
         :return: offset from file beginning, or EBADF (fd is not a valid file descriptor or is not open)
 
-        '''
+        """
         signed_offset = self._to_signed_dword(offset)
         try:
             return self._get_fd(fd).seek(signed_offset, whence)
@@ -1307,7 +1317,7 @@ class Linux(Platform):
         return len(data)
 
     def sys_write(self, fd, buf, count):
-        ''' write - send bytes through a file descriptor
+        """ write - send bytes through a file descriptor
           The write system call writes up to count bytes from the buffer pointed
           to by buf to the file descriptor fd. If count is zero, write returns 0
           and optionally sets *tx_bytes to zero.
@@ -1318,7 +1328,7 @@ class Linux(Platform):
           :return: 0          Success
                     EBADF      fd is not a valid file descriptor or is not open.
                     EFAULT     buf or tx_bytes points to an invalid address.
-        '''
+        """
         data: bytes = bytes()
         cpu = self.current
         if count != 0:
@@ -1351,13 +1361,13 @@ class Linux(Platform):
         return len(data)
 
     def sys_fork(self):
-        '''
+        """
         We don't support forking, but do return a valid error code to client binary.
-        '''
+        """
         return -errno.ENOSYS
 
     def sys_access(self, buf, mode):
-        '''
+        """
         Checks real user's permissions for a file
         :rtype: int
 
@@ -1366,7 +1376,7 @@ class Linux(Platform):
         :return:
             -  C{0} if the calling process can access the file in the desired mode.
             - C{-1} if the calling process can not access the file in the desired mode.
-        '''
+        """
         filename = b''
         for i in range(0, 255):
             c = Operators.CHR(self.current.read_int(buf + i, 8))
@@ -1378,16 +1388,16 @@ class Linux(Platform):
             return 0
         else:
             if not os.path.exists(filename):
-                return -2  # Decodes to ENOENT
+                return -errno.ENOENT
             return -1
 
     def sys_newuname(self, old_utsname):
-        '''
+        """
         Writes system information in the variable C{old_utsname}.
         :rtype: int
         :param old_utsname: the buffer to write the system info.
         :return: C{0} on success
-        '''
+        """
         from datetime import datetime
 
         def pad(s):
@@ -1406,14 +1416,14 @@ class Linux(Platform):
         return 0
 
     def sys_brk(self, brk):
-        '''
+        """
         Changes data segment size (moves the C{brk} to the new address)
         :rtype: int
         :param brk: the new address for C{brk}.
         :return: the value of the new C{brk}.
         :raises error:
                     - "Error in brk!" if there is any error allocating the memory
-        '''
+        """
         if brk != 0 and brk > self.elf_brk:
             mem = self.current.memory
             size = brk - self.brk
@@ -1427,7 +1437,7 @@ class Linux(Platform):
         return self.brk
 
     def sys_arch_prctl(self, code, addr):
-        '''
+        """
         Sets architecture-specific thread state
         :rtype: int
 
@@ -1436,7 +1446,7 @@ class Linux(Platform):
         :return: C{0} on success
         :raises error:
             - if C{code} is different to C{ARCH_SET_FS}
-        '''
+        """
         ARCH_SET_GS = 0x1001
         ARCH_SET_FS = 0x1002
         ARCH_GET_FS = 0x1003
@@ -1472,11 +1482,11 @@ class Linux(Platform):
         return f
 
     def sys_open(self, buf, flags, mode):
-        '''
+        """
         :param buf: address of zero-terminated pathname
         :param flags: file access bits
         :param mode: file permission mode
-        '''
+        """
         filename = self.current.read_string(buf)
         try:
             f = self._sys_open_get_file(filename, flags)
@@ -1488,7 +1498,7 @@ class Linux(Platform):
         return self._open(f)
 
     def sys_openat(self, dirfd, buf, flags, mode):
-        '''
+        """
         Openat SystemCall - Similar to open system call except dirfd argument
         when path contained in buf is relative, dirfd is referred to set the relative path
         Special value AT_FDCWD set for dirfd to set path relative to current directory
@@ -1497,7 +1507,7 @@ class Linux(Platform):
         :param buf: address of zero-terminated pathname
         :param flags: file access bits
         :param mode: file permission mode
-        '''
+        """
 
         filename = self.current.read_string(buf)
         dirfd = ctypes.c_int32(dirfd).value
@@ -1528,12 +1538,12 @@ class Linux(Platform):
         return self._open(f)
 
     def sys_rename(self, oldnamep, newnamep):
-        '''
+        """
         Rename filename `oldnamep` to `newnamep`.
 
         :param int oldnamep: pointer to oldname
         :param int newnamep: pointer to newname
-        '''
+        """
         oldname = self.current.read_string(oldnamep)
         newname = self.current.read_string(newnamep)
 
@@ -1546,9 +1556,9 @@ class Linux(Platform):
         return ret
 
     def sys_fsync(self, fd):
-        '''
+        """
         Synchronize a file's in-core state with that on disk.
-        '''
+        """
 
         ret = 0
         try:
@@ -1588,7 +1598,7 @@ class Linux(Platform):
         return 0
 
     def sys_rt_sigprocmask(self, cpu, how, newset, oldset):
-        '''Wrapper for sys_sigprocmask'''
+        """Wrapper for sys_sigprocmask"""
         return self.sys_sigprocmask(cpu, how, newset, oldset)
 
     def sys_sigprocmask(self, cpu, how, newset, oldset):
@@ -1596,12 +1606,12 @@ class Linux(Platform):
         return 0
 
     def sys_dup(self, fd):
-        '''
+        """
         Duplicates an open file descriptor
         :rtype: int
         :param fd: the open file descriptor to duplicate.
         :return: the new file descriptor.
-        '''
+        """
 
         if not self._is_fd_open(fd):
             logger.info("DUP: Passed fd is not open. Returning EBADF")
@@ -1611,13 +1621,13 @@ class Linux(Platform):
         return newfd
 
     def sys_dup2(self, fd, newfd):
-        '''
+        """
         Duplicates an open fd to newfd. If newfd is open, it is first closed
         :rtype: int
         :param fd: the open file descriptor to duplicate.
         :param newfd: the file descriptor to alias the file described by fd.
         :return: newfd.
-        '''
+        """
         try:
             file = self._get_fd(fd)
         except FdError as e:
@@ -1641,12 +1651,12 @@ class Linux(Platform):
         return newfd
 
     def sys_chroot(self, path):
-        '''
+        """
         An implementation of chroot that does perform some basic error checking,
         but does not actually chroot.
 
         :param path: Path to chroot
-        '''
+        """
         if path not in self.current.memory:
             return -errno.EFAULT
 
@@ -1660,12 +1670,12 @@ class Linux(Platform):
         return -errno.EPERM
 
     def sys_close(self, fd):
-        '''
+        """
         Closes a file descriptor
         :rtype: int
         :param fd: the file descriptor to close.
         :return: C{0} on success.
-        '''
+        """
         if self._is_fd_open(fd):
             self._close(fd)
         else:
@@ -1674,15 +1684,17 @@ class Linux(Platform):
         return 0
 
     def sys_readlink(self, path, buf, bufsize):
-        '''
-        Read
+        """
+        Read the value of a symbolic link.
         :rtype: int
 
-        :param path: the "link path id"
-        :param buf: the buffer where the bytes will be putted.
-        :param bufsize: the max size for read the link.
-        :todo: Out eax number of bytes actually sent | EAGAIN | EBADF | EFAULT | EINTR | errno.EINVAL | EIO | ENOSPC | EPIPE
-        '''
+        :param path: symbolic link.
+        :param buf: destination buffer.
+        :param bufsize: size to read.
+        :return: number of bytes placed in buffer on success, -errno on error.
+
+        :todo: return -errno on error.
+        """
         if bufsize <= 0:
             return -errno.EINVAL
         filename = self.current.read_string(path)
@@ -1691,14 +1703,40 @@ class Linux(Platform):
         else:
             data = os.readlink(filename)[:bufsize]
         self.current.write_bytes(buf, data)
+        # XXX: Return an appropriate value on error.
         return len(data)
 
+    def sys_readlinkat(self, dir_fd, path, buf, bufsize):
+        """
+        Read the value of a symbolic link relative to a directory file descriptor.
+        :rtype: int
+
+        :param dir_fd: directory file descriptor.
+        :param path: symbolic link.
+        :param buf: destination buffer.
+        :param bufsize: size to read.
+        :return: number of bytes placed in buffer on success, -errno on error.
+
+        :todo: return -errno on error, full 'dir_fd' support.
+        """
+        _path = self.current.read_string(path)
+        _dir_fd = ctypes.c_int32(dir_fd).value
+
+        if not (os.path.isabs(_path) or _dir_fd == self.FCNTL_FDCWD):
+            raise NotImplementedError(
+                "Only absolute paths or paths relative to CWD are supported"
+            )
+
+        # XXX: Use 'dir_fd'.
+        # XXX: Return an appropriate value on error.
+        return self.sys_readlink(path, buf, bufsize)
+
     def sys_mmap_pgoff(self, address, size, prot, flags, fd, offset):
-        '''Wrapper for mmap2'''
+        """Wrapper for mmap2"""
         return self.sys_mmap2(address, size, prot, flags, fd, offset)
 
     def sys_mmap2(self, address, size, prot, flags, fd, offset):
-        '''
+        """
         Creates a new mapping in the virtual address space of the calling process.
         :rtype: int
         :param address: the starting address for the new mapping. This address is used as hint unless the
@@ -1715,11 +1753,11 @@ class Linux(Platform):
         :return:
             - C{-1} In case you use C{MAP_FIXED} in the flags and the mapping can not be place at the desired address.
             - the address of the new mapping.
-        '''
+        """
         return self.sys_mmap(address, size, prot, flags, fd, offset * 0x1000)
 
     def sys_mmap(self, address, size, prot, flags, fd, offset):
-        '''
+        """
         Creates a new mapping in the virtual address space of the calling process.
         :rtype: int
 
@@ -1738,7 +1776,7 @@ class Linux(Platform):
                 - C{-1} in case you use C{MAP_FIXED} in the flags and the mapping can not be place at the desired address.
                 - the address of the new mapping (that must be the same as address in case you included C{MAP_FIXED} in flags).
         :todo: handle exception.
-        '''
+        """
 
         if address == 0:
             address = None
@@ -1772,7 +1810,7 @@ class Linux(Platform):
         return result
 
     def sys_mprotect(self, start, size, prot):
-        '''
+        """
         Sets protection on a region of memory. Changes protection for the calling process's
         memory page(s) containing any part of the address range in the interval [C{start}, C{start}+C{size}-1].
         :rtype: int
@@ -1781,61 +1819,61 @@ class Linux(Platform):
         :param size: the size of the portion of memory to change the permissions.
         :param prot: the new access permission for the memory.
         :return: C{0} on success.
-        '''
+        """
         perms = perms_from_protflags(prot)
         ret = self.current.memory.mprotect(start, size, perms)
         return 0
 
     def sys_munmap(self, addr, size):
-        '''
+        """
         Unmaps a file from memory. It deletes the mappings for the specified address range
         :rtype: int
 
         :param addr: the starting address to unmap.
         :param size: the size of the portion to unmap.
         :return: C{0} on success.
-        '''
+        """
         self.current.memory.munmap(addr, size)
         return 0
 
     def sys_getuid(self):
-        '''
+        """
         Gets user identity.
         :rtype: int
 
         :return: this call returns C{1000} for all the users.
-        '''
+        """
         return 1000
 
     def sys_getgid(self):
-        '''
+        """
         Gets group identity.
         :rtype: int
 
         :return: this call returns C{1000} for all the groups.
-        '''
+        """
         return 1000
 
     def sys_geteuid(self):
-        '''
+        """
         Gets user identity.
         :rtype: int
 
         :return: This call returns C{1000} for all the users.
-        '''
+        """
         return 1000
 
     def sys_getegid(self):
-        '''
+        """
         Gets group identity.
         :rtype: int
 
         :return: this call returns C{1000} for all the groups.
-        '''
+        """
         return 1000
 
     def sys_readv(self, fd, iov, count):
-        '''
+        """
         Works just like C{sys_read} except that data is read into multiple buffers.
         :rtype: int
 
@@ -1843,7 +1881,7 @@ class Linux(Platform):
         :param iov: the buffer where the the bytes to read are stored.
         :param count: amount of C{iov} buffers to read from the file.
         :return: the amount of bytes read in total.
-        '''
+        """
         cpu = self.current
         ptrsize = cpu.address_bit_size
         sizeof_iovec = 2 * (ptrsize // 8)
@@ -1860,7 +1898,7 @@ class Linux(Platform):
         return total
 
     def sys_writev(self, fd, iov, count):
-        '''
+        """
         Works just like C{sys_write} except that multiple buffers are written out.
         :rtype: int
 
@@ -1868,7 +1906,7 @@ class Linux(Platform):
         :param iov: the buffer where the the bytes to write are taken.
         :param count: amount of C{iov} buffers to write into the file.
         :return: the amount of bytes written in total.
-        '''
+        """
         cpu = self.current
         ptrsize = cpu.address_bit_size
         sizeof_iovec = 2 * (ptrsize // 8)
@@ -1891,13 +1929,13 @@ class Linux(Platform):
         return total
 
     def sys_set_thread_area(self, user_info):
-        '''
+        """
         Sets a thread local storage (TLS) area. Sets the base address of the GS segment.
         :rtype: int
 
         :param user_info: the TLS array entry set corresponds to the value of C{u_info->entry_number}.
         :return: C{0} on success.
-        '''
+        """
         n = self.current.read_int(user_info, 32)
         pointer = self.current.read_int(user_info + 4, 32)
         m = self.current.read_int(user_info + 8, 32)
@@ -1909,13 +1947,37 @@ class Linux(Platform):
         self.current.write_int(user_info, (0x63 - 3) // 8, 32)
         return 0
 
+    def sys_getpriority(self, which, who):
+        """
+        System call ignored.
+        :rtype: int
+
+        :return: C{0}
+        """
+        logger.warning("Unimplemented system call: sys_get_priority")
+        return 0
+
+    def sys_setpriority(self, which, who, prio):
+        """
+        System call ignored.
+        :rtype: int
+
+        :return: C{0}
+        """
+        logger.warning("Unimplemented system call: sys_setpriority")
+        return 0
+
+    def sys_tgkill(self, tgid, pid, sig):
+        logger.warning("Unimplemented system call: sys_tgkill")
+        return 0
+
     def sys_acct(self, path):
-        '''
+        """
         System call not implemented.
         :rtype: int
 
         :return: C{-1}
-        '''
+        """
         logger.debug("BSD account not implemented!")
         return -1
 
@@ -1924,10 +1986,10 @@ class Linux(Platform):
         return self.sys_exit_group(error_code)
 
     def sys_exit_group(self, error_code):
-        '''
+        """
         Exits all threads in a process
         :raises Exception: 'Finished'
-        '''
+        """
         return self._exit(f"Program finished with exit status: {ctypes.c_int32(error_code).value}")
 
     def sys_set_tid_address(self, tidptr):
@@ -1992,9 +2054,9 @@ class Linux(Platform):
         return self._is_sockfd(sockfd)
 
     def sys_accept(self, sockfd, addr, addrlen):
-        '''
+        """
         https://github.com/torvalds/linux/blob/63bdf4284c38a48af21745ceb148a087b190cd21/net/socket.c#L1649-L1653
-        '''
+        """
         return self.sys_accept4(sockfd, addr, addrlen, 0)
 
     def sys_accept4(self, sockfd, addr, addrlen, flags):
@@ -2083,7 +2145,7 @@ class Linux(Platform):
         return count
 
     def sys_getrandom(self, buf, size, flags):
-        '''
+        """
         The getrandom system call fills the buffer with random bytes of buflen.
         The source of random (/dev/random or /dev/urandom) is decided based on
         the flags value.
@@ -2095,7 +2157,7 @@ class Linux(Platform):
         :param size: number of random bytes
         :param flags: source of random (/dev/random or /dev/urandom)
         :return: number of bytes copied to buf
-        '''
+        """
 
         GRND_NONBLOCK = 0x0001
         GRND_RANDOM = 0x0002
@@ -2116,16 +2178,16 @@ class Linux(Platform):
 
     @unimplemented
     def sys_futex(self, uaddr, op, val, utime, uaddr2, val3) -> int:
-        '''
+        """
         Fast user-space locking
         success: Depends on the operation, but often 0
         error: Returns -1
-        '''
+        """
         return 0
 
     @unimplemented
     def sys_clone_ptregs(self, flags, child_stack, ptid, ctid, regs):
-        '''
+        """
         Create a child process
         :param flags:
         :param child_stack:
@@ -2133,14 +2195,14 @@ class Linux(Platform):
         :param ctid:
         :param regs:
         :return: The PID of the child process
-        '''
+        """
         return self.sys_getpid()
 
     # Dispatchers...
     def syscall(self):
-        '''
+        """
         Syscall dispatcher.
-        '''
+        """
 
         index = self._syscall_abi.syscall_number()
 
@@ -2174,11 +2236,11 @@ class Linux(Platform):
         return int(t)
 
     def sys_gettimeofday(self, tv, tz) -> int:
-        '''
+        """
         Get time
         success: Returns 0
         error: Returns -1
-        '''
+        """
         if tv != 0:
             microseconds = int(time.time() * 10 ** 6)
             self.current.write_bytes(tv, struct.pack('L', microseconds // (10 ** 6)) + struct.pack('L', microseconds))
@@ -2187,11 +2249,11 @@ class Linux(Platform):
         return 0
 
     def sched(self):
-        ''' Yield CPU.
+        """ Yield CPU.
             This will choose another process from the running list and change
             current running process. May give the same cpu if only one running
             process.
-        '''
+        """
         if len(self.procs) > 1:
             logger.debug("SCHED:")
             logger.debug(f"\tProcess: {self.procs!r}")
@@ -2218,10 +2280,10 @@ class Linux(Platform):
         self._current = next_running_idx
 
     def wait(self, readfds, writefds, timeout):
-        ''' Wait for file descriptors or timeout.
+        """ Wait for file descriptors or timeout.
             Adds the current process in the correspondent waiting list and
             yield the cpu to another running process.
-        '''
+        """
         logger.debug("WAIT:")
         logger.debug(f"\tProcess {self._current} is going to wait for [ {readfds!r} {writefds!r} {timeout!r} ]")
         logger.debug(f"\tProcess: {self.procs!r}")
@@ -2249,7 +2311,7 @@ class Linux(Platform):
             self.check_timers()
 
     def awake(self, procid):
-        ''' Remove procid from waitlists and reestablish it in the running list '''
+        """ Remove procid from waitlists and reestablish it in the running list """
         logger.debug(f"Remove procid:{procid} from waitlists and reestablish it in the running list")
         for wait_list in self.rwait:
             if procid in wait_list:
@@ -2265,7 +2327,7 @@ class Linux(Platform):
     def connections(self, fd):
         """ File descriptors are connected to each other like pipes, except
         for 0, 1, and 2. If you write to FD(N) for N >=3, then that comes
-		out from FD(N+1) and vice-versa
+        out from FD(N+1) and vice-versa
         """
         if fd in [0, 1, 2]:
             return None
@@ -2275,14 +2337,14 @@ class Linux(Platform):
             return fd - 1
 
     def signal_receive(self, fd):
-        ''' Awake one process waiting to receive data on fd '''
+        """ Awake one process waiting to receive data on fd """
         connections = self.connections
         if connections(fd) and self.twait[connections(fd)]:
             procid = random.sample(self.twait[connections(fd)], 1)[0]
             self.awake(procid)
 
     def signal_transmit(self, fd):
-        ''' Awake one process waiting to transmit data on fd '''
+        """ Awake one process waiting to transmit data on fd """
         connection = self.connections(fd)
         if connection is None or connection >= len(self.rwait):
             return
@@ -2293,7 +2355,7 @@ class Linux(Platform):
             self.awake(procid)
 
     def check_timers(self):
-        ''' Awake process if timer has expired '''
+        """ Awake process if timer has expired """
         if self._current is None:
             # Advance the clocks. Go to future!!
             advance = min([self.clocks] + [x for x in self.timers if x is not None]) + 1
@@ -2332,13 +2394,13 @@ class Linux(Platform):
     # 64bit syscalls
 
     def sys_newfstat(self, fd, buf):
-        '''
+        """
         Determines information about a file based on its file descriptor.
         :rtype: int
         :param fd: the file descriptor of the file that is being inquired.
         :param buf: a buffer where data about the file will be stored.
         :return: C{0} on success, EBADF when called with bad fd
-        '''
+        """
 
         try:
             stat = self._get_fd(fd).stat()
@@ -2377,13 +2439,13 @@ class Linux(Platform):
         return 0
 
     def sys_fstat(self, fd, buf):
-        '''
+        """
         Determines information about a file based on its file descriptor.
         :rtype: int
         :param fd: the file descriptor of the file that is being inquired.
         :param buf: a buffer where data about the file will be stored.
         :return: C{0} on success, EBADF when called with bad fd
-        '''
+        """
 
         try:
             stat = self._get_fd(fd).stat()
@@ -2419,14 +2481,14 @@ class Linux(Platform):
         return 0
 
     def sys_fstat64(self, fd, buf):
-        '''
+        """
         Determines information about a file based on its file descriptor (for Linux 64 bits).
         :rtype: int
         :param fd: the file descriptor of the file that is being inquired.
         :param buf: a buffer where data about the file will be stored.
         :return: C{0} on success, EBADF when called with bad fd
         :todo: Fix device number.
-        '''
+        """
 
         try:
             stat = self._get_fd(fd).stat()
@@ -2463,19 +2525,19 @@ class Linux(Platform):
         return 0
 
     def sys_newstat(self, fd, buf):
-        '''
+        """
         Wrapper for stat64()
-        '''
+        """
         return self.sys_stat64(fd, buf)
 
     def sys_stat64(self, path, buf):
-        '''
+        """
         Determines information about a file based on its filename (for Linux 64 bits).
         :rtype: int
         :param path: the pathname of the file that is being inquired.
         :param buf: a buffer where data about the file will be stored.
         :return: C{0} on success.
-        '''
+        """
         return self._stat(path, buf, True)
 
     def sys_stat32(self, path, buf):
@@ -2490,57 +2552,44 @@ class Linux(Platform):
         self.sys_close(fd)
         return ret
 
-    # @unimplemented
     def sys_mkdir(self, pathname, mode) -> int:
-        '''
-        Create a directory
-        success: Returns 0
-        error: Returns -1
-        '''
+        """
+        Creates a directory
+        :return 0 on success
+        """
         name = self.current.read_string(pathname)
-        os.mkdir(name, mode=mode)
+        try:
+            os.mkdir(name, mode=mode)
+        except OSError as e:
+            return -e.errno
 
         return 0
 
-    # @unimplemented
-    def sys_mkdirat(self, dfd, pathname, mode) -> int:
-        '''
-        Create a directory
-        success: Returns 0
-        error: Returns -1
-        '''
-        name = self.current.read_string(pathname)
-        os.mkdirat(name, mode=mode, dir_fd=dfd)
-
-        return 0
-
-    # @unimplemented
     def sys_rmdir(self, pathname) -> int:
-        '''
-        Delete a directory
-        success: Returns 0
-        error: Returns -1
-        '''
+        """
+        Deletes a directory
+        :return 0 on success
+        """
         name = self.current.read_string(pathname)
-        os.rmdir(name)
+        try:
+            os.rmdir(name)
+        except OSError as e:
+            return -e.errno
 
         return -1
 
     def sys_pipe(self, filedes) -> int:
-        '''
-        Create pipe
-        success: Returns 0
-        error: Returns -1
-        '''
+        """
+        Wrapper for pipe2(filedes, 0)
+        """
         return self.sys_pipe2(filedes, 0)
 
     def sys_pipe2(self, filedes, flags) -> int:
-        '''
+        """
         # TODO (ehennenfent) create a native pipe type instead of cheating with sockets
         Create pipe
-        success: Returns 0
-        error: Returns -1
-        '''
+        :return 0 on success
+        """
         if flags == 0:
             l, r = Socket.pair()
             self.current.write_int(filedes, self._open(l))
@@ -2550,52 +2599,50 @@ class Linux(Platform):
             return -1
 
     def sys_ftruncate(self, fd, length) -> int:
-        '''
-        Truncate a file to a specified length
-        success: Returns 0
-        error: Returns -1
-        '''
+        """
+        Truncate a file to <length>
+        :return 0 on success
+        """
         try:
             file = self._get_fd(fd)
         except FdError as e:
             logger.info("File descriptor %s is not open", fd)
             return -e.err
+        except OSError as e:
+            return -e.errno
         file.file.truncate(length)
         return 0
 
     def sys_link(self, oldname, newname) -> int:
-        '''
-        Make a new name for a file
-        success: Returns 0
-        error: Returns -1
-        '''
+        """
+        Create a symlink from oldname to newname.
+        :return 0 on success
+        """
         oldname = self.current.read_string(oldname)
         newname = self.current.read_string(newname)
         try:
             os.link(oldname, newname)
-        except Exception as e:
+        except OSError as e:
             return -e.errno
         return 0
 
     def sys_unlink(self, pathname) -> int:
-        '''
-        Delete a name and possibly the file it refers to
-        success: Returns 0
-        error: Returns -1
-        '''
+        """
+        Delete a symlink.
+        :return 0 on success
+        """
         pathname = self.current.read_string(pathname)
         try:
             os.unlink(pathname)
-        except Exception as e:
+        except OSError as e:
             return -e.errno
         return 0
 
     def sys_getdents(self, fd, dirent, count) -> int:
-        '''
-        Get directory entries
-        success: Returns the number of bytes read - On end of directory, 0
-        error: Returns -1
-        '''
+        """
+        Fill memory with directory entry structs
+        return: The number of bytes read or 0 at the end of the directory
+        """
         buf = b''
         try:
             file = self._get_fd(fd)
@@ -2616,21 +2663,44 @@ class Linux(Platform):
 
                 buf += struct.pack(fmt, item.inode(), size, size, bytes(item.name, 'utf-8') + b'\x00', b'\x00')
 
-
         self.current.write_bytes(dirent, buf)
         return len(buf)
 
     def sys_nanosleep(self, rqtp, rmtp) -> int:
-        '''
-        High-resolution sleep
-        success: Returns 0
-        error: Returns -1
-        '''
+        """
+        Ignored
+        """
         logger.info("Ignoring call to sys_nanosleep")
         return 0
 
+    def sys_chmod(self, filename, mode) -> int:
+        """
+        Modify file permissions
+        :return 0 on success
+        """
+        filename = self.current.read_string(filename)
+        try:
+            os.chmod(filename, mode)
+        except OSError as e:
+            return -e.errno
+
+        return 0
+
+    def sys_chown(self, filename, user, group) -> int:
+        """
+        Modify file ownership
+        :return 0 on success
+        """
+        filename = self.current.read_string(filename)
+        try:
+            os.chown(filename, user, group)
+        except OSError as e:
+            return -e.errno
+
+        return 0
+
     def _arch_specific_init(self):
-        assert self.arch in {'i386', 'amd64', 'armv7'}
+        assert self.arch in {'i386', 'amd64', 'armv7', 'aarch64'}
 
         if self.arch == 'i386':
             self._uname_machine = 'i386'
@@ -2641,6 +2711,11 @@ class Linux(Platform):
             self._init_arm_kernel_helpers()
             self.current._set_mode_by_val(self.current.PC)
             self.current.PC &= ~1
+        elif self.arch == 'aarch64':
+            # XXX: Possible values: 'aarch64_be', 'aarch64', 'armv8b', 'armv8l'.
+            # See 'UTS_MACHINE' and 'COMPAT_UTS_MACHINE' in the Linux kernel source.
+            # https://stackoverflow.com/a/45125525
+            self._uname_machine = 'aarch64'
 
         # Establish segment registers for x86 architectures
         if self.arch in {'i386', 'amd64'}:
@@ -2650,13 +2725,13 @@ class Linux(Platform):
 
     @staticmethod
     def _interp_total_size(interp):
-        '''
+        """
         Compute total load size of interpreter.
 
         :param ELFFile interp: interpreter ELF .so
         :return: total load size of interpreter, not aligned
         :rtype: int
-        '''
+        """
         load_segs = [x for x in interp.iter_segments() if x.header.p_type == 'PT_LOAD']
         last = load_segs[-1]
         return last.header.p_vaddr + last.header.p_memsz
@@ -2704,13 +2779,13 @@ class SLinux(Linux):
         return cpu
 
     def add_symbolic_file(self, symbolic_file):
-        '''
+        """
         Add a symbolic file. Each '+' in the file will be considered
         as symbolic; other chars are concretized.
         Symbolic files must have been defined before the call to `run()`.
 
         :param str symbolic_file: the name of the symbolic file
-        '''
+        """
         self.symbolic_files.append(symbolic_file)
 
     @property
@@ -2752,7 +2827,7 @@ class SLinux(Linux):
         for c in data:
             if issymbolic(c):
                 bytes_concretized += 1
-                c = bytes([solver.get_value(self.constraints, c)])
+                c = bytes([Z3Solver().get_value(self.constraints, c)])
             concrete_data += cast(bytes, c)
 
         if bytes_concretized > 0:
@@ -2764,7 +2839,7 @@ class SLinux(Linux):
 
     def sys_exit_group(self, error_code):
         if issymbolic(error_code):
-            error_code = solver.get_value(self.constraints, error_code)
+            error_code = Z3Solver().get_value(self.constraints, error_code)
             return self._exit(f"Program finished with exit status: {ctypes.c_int32(error_code).value} (*)")
         else:
             return super().sys_exit_group(error_code)
@@ -2936,7 +3011,7 @@ class SLinux(Linux):
         return super().sys_accept(sockfd, addr, addrlen)
 
     def sys_open(self, buf, flags, mode):
-        '''
+        """
         A version of open(2) that includes a special case for a symbolic path.
         When given a symbolic path, it will create a temporary file with
         64 bytes of symbolic bytes as contents and return that instead.
@@ -2944,7 +3019,7 @@ class SLinux(Linux):
         :param buf: address of zero-terminated pathname
         :param flags: file access bits
         :param mode: file permission mode
-        '''
+        """
         offset = 0
         symbolic_path = issymbolic(self.current.read_int(buf, 8))
         if symbolic_path:
@@ -2963,14 +3038,14 @@ class SLinux(Linux):
         return rv
 
     def sys_openat(self, dirfd, buf, flags, mode):
-        '''
+        """
         A version of openat that includes a symbolic path and symbolic directory file descriptor
 
         :param dirfd: directory file descriptor
         :param buf: address of zero-terminated pathname
         :param flags: file access bits
         :param mode: file permission mode
-        '''
+        """
 
         if issymbolic(dirfd):
             logger.debug("Ask to read from a symbolic directory file descriptor!!")
@@ -2986,7 +3061,7 @@ class SLinux(Linux):
         return super().sys_openat(dirfd, buf, flags, mode)
 
     def sys_getrandom(self, buf, size, flags):
-        '''
+        """
         The getrandom system call fills the buffer with random bytes of buflen.
         The source of random (/dev/random or /dev/urandom) is decided based on the flags value.
 
@@ -2994,7 +3069,7 @@ class SLinux(Linux):
         :param size: number of random bytes
         :param flags: source of random (/dev/random or /dev/urandom)
         :return: number of bytes copied to buf
-        '''
+        """
 
         if issymbolic(buf):
             logger.debug("sys_getrandom: Asked to generate random to a symbolic buffer address")
@@ -3021,7 +3096,7 @@ class SLinux(Linux):
             try:
                 for c in data:
                     if issymbolic(c):
-                        c = solver.get_value(self.constraints, c)
+                        c = Z3Solver().get_value(self.constraints, c)
                     fd.write(make_chr(c))
             except SolverError:
                 fd.write('{SolverError}')
@@ -3061,7 +3136,6 @@ class SLinux(Linux):
             'stderr': err.getvalue(),
             'net': net.getvalue()
         }
-
         for f in self.files + self._closed_files:
             if not isinstance(f, SymbolicFile):
                 continue

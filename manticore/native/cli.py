@@ -55,11 +55,15 @@ def native_main(args, _logger):
         m.load_assertions(args.assertions)
 
     @m.init
-    def init(initial_state):
+    def init(m, ready_states):
         for file in args.files:
-            initial_state.platform.add_symbolic_file(file)
-
-    m.run(procs=args.procs, should_profile=args.profile)
+            for state in ready_states:
+                state.platform.add_symbolic_file(file)
 
     for detector in list(m.detectors):
         m.unregister_detector(detector)
+
+    with m.kill_timeout():
+        m.run()
+
+    m.finalize()

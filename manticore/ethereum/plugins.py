@@ -88,7 +88,7 @@ class FilterFunctions(Plugin):
 
 
 class LoopDepthLimiter(Plugin):
-    ''' This just aborts explorations that are too deep '''
+    """ This just aborts explorations that are too deep """
 
     def __init__(self, loop_count_threshold=5, **kwargs):
         super().__init__(**kwargs)
@@ -111,7 +111,7 @@ class LoopDepthLimiter(Plugin):
 
 class VerboseTrace(Plugin):
     """
-    Generates a verbose trace of EVM execution and saves in workspace into `state<id>.verbose_trace`.
+    Generates a verbose trace of EVM execution and saves in workspace into `state<id>.trace`.
 
     Example output can be seen in test_eth_plugins.
     """
@@ -120,7 +120,7 @@ class VerboseTrace(Plugin):
         current_vm = state.platform.current_vm
         state.context.setdefault('str_trace', []).append(str(current_vm))
 
-    def will_generate_testcase_callback(self, state, testcase, message):
+    def generate_testcase(self, state, testcase, message):
         trace = state.context.get('str_trace', [])
 
         with testcase.open_stream('verbose_trace') as vt:

@@ -3,7 +3,7 @@ import uuid
 
 
 class Expression:
-    ''' Abstract taintable Expression. '''
+    """ Abstract taintable Expression. """
 
     def __init__(self, taint=()):
         if self.__class__ is Expression:
@@ -67,8 +67,8 @@ class Operation(Expression):
     def __init__(self, *operands, **kwargs):
         if self.__class__ is Operation:
             raise TypeError
-        assert len(operands) > 0
-        assert all(isinstance(x, Expression) for x in operands)
+        #assert len(operands) > 0
+        #assert all(isinstance(x, Expression) for x in operands)
         self._operands = operands
 
         # If taint was not forced by a keyword argument, calculate default
@@ -190,7 +190,7 @@ class BoolITE(BoolOperation):
 
 
 class BitVec(Expression):
-    ''' This adds a bitsize to the Expression class '''
+    """ This adds a bitsize to the Expression class """
 
     def __init__(self, size, *operands, **kwargs):
         super().__init__(*operands, **kwargs)

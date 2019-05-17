@@ -3,6 +3,9 @@ import types
 
 import elftools
 import os
+import shlex
+import time
+import sys
 from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
 
@@ -10,7 +13,7 @@ from .state import State
 from .detectors import Detector
 from ..core.manticore import ManticoreBase
 from ..core.smtlib import ConstraintSet
-from ..exceptions import ManticoreError
+from ..core.smtlib.solver import Z3Solver
 from ..utils import log, config
 from ..utils.helpers import issymbolic
 
@@ -32,6 +35,11 @@ def write_findings(method, lead_space, pc):
 
 
 class Manticore(ManticoreBase):
+
+    def generate_testcase(self, state, message='test'):
+        testcase = super().generate_testcase(state, message)
+        self._output.save_testcase(state, testcase, message)
+
     def __init__(self, path_or_state, argv=None, workspace_url=None, policy='random', **kwargs):
         """
         :param path_or_state: Path to binary or a state (object) to begin from.
@@ -48,7 +56,58 @@ class Manticore(ManticoreBase):
 
         self.detectors = {}
 
-        self.subscribe('will_generate_testcase', self._generate_testcase_callback)
+        # Move the following into a linux plugin
+        self._assertions = {}
+        self._coverage_file = None
+        self.trace = None
+        # sugar for 'will_execute_instruction"
+        self._hooks = {}
+
+        #self.subscribe('will_generate_testcase', self._generate_testcase_callback)
+
+    ############################################################################
+    # Model hooks + callback
+    ############################################################################
+
+    def apply_model_hooks(self, path):
+        # TODO(yan): Simplify the partial function application
+
+        # Imported straight from __main__.py; this will be re-written once the new
+        # event code is in place.
+        import importlib
+        from manticore import platforms
+
+        with open(path, 'r') as fnames:
+            for line in fnames.readlines():
+                address, cc_name, name = line.strip().split(' ')
+                fmodel = platforms
+                name_parts = name.split('.')
+                importlib.import_module(f".platforms.{name_parts[0]}", 'manticore')
+                for n in name_parts:
+                    fmodel = getattr(fmodel, n)
+                assert fmodel != platforms
+
+                def cb_function(state):
+                    state.platform.invoke_model(fmodel, prefix_args=(state.platform,))
+                self._model_hooks.setdefault(int(address, 0), set()).add(cb_function)
+                self._executor.subscribe('will_execute_instruction', self._model_hook_callback)
+
+    def _model_hook_callback(self, state, instruction):
+        pc = state.cpu.PC
+        if pc not in self._model_hooks:
+            return
+
+        for cb in self._model_hooks[pc]:
+            cb(state)
+
+    @property
+    def coverage_file(self):
+        return self._coverage_file
+
+    @coverage_file.setter
+    @ManticoreBase.at_not_running
+    def coverage_file(self, path):
+        self._coverage_file = path
 
     def _generate_testcase_callback(self, state, testcase, message):
         """
@@ -70,7 +129,7 @@ class Manticore(ManticoreBase):
                     findings.write(f'- {finding} -\n')
                     write_findings(findings, '  ', pc)
 
-        self._output.save_testcase(state, testcase.prefix, message)
+        self._output.save_testcase(state, testcase, message)
 
     @classmethod
     def linux(cls, path, argv=None, envp=None, entry_symbol=None, symbolic_files=None, concrete_start='', pure_symbolic=False, stdin_size=None, **kwargs):
@@ -119,11 +178,44 @@ class Manticore(ManticoreBase):
     @property
     def binary_path(self):
         """
-        Assumes that self._initial_state.platform.program always
-        refers to current program. Might not be true in case program
-        calls execve().
+        Assumes that all states refers to a single common program. Might not be
+        true in case program calls execve().
         """
-        return self._initial_state.platform.program
+        for st in self.all_states:
+            return st.platform.program
+
+    ############################################################################
+    # Assertion hooks + callback
+    ############################################################################
+
+    def load_assertions(self, path):
+        with open(path, 'r') as f:
+            for line in f.readlines():
+                pc = int(line.split(' ')[0], 16)
+                if pc in self._assertions:
+                    logger.debug("Repeated PC in assertions file %s", path)
+                self._assertions[pc] = ' '.join(line.split(' ')[1:])
+                self.subscribe('will_execute_instruction', self._assertions_callback)
+
+    def _assertions_callback(self, state, pc, instruction):
+        if pc not in self._assertions:
+            return
+
+        from ..core.parser.parser import parse
+
+        program = self._assertions[pc]
+
+        # This will interpret the buffer specification written in INTEL ASM.
+        # (It may dereference pointers)
+        assertion = parse(program, state.cpu.read_int, state.cpu.read_register)
+        if not Z3Solver().can_be_true(state.constraints, assertion):
+            logger.info(str(state.cpu))
+            logger.info("Assertion %x -> {%s} does not hold. Aborting state.",
+                        state.cpu.pc, program)
+            raise TerminateState()
+
+        # Everything is good add it.
+        state.constraints.add(assertion)
 
     ###############################
     # Detectors
@@ -162,30 +254,28 @@ class Manticore(ManticoreBase):
     ###############################
 
     def init(self, f):
-        '''
+        """
         A decorator used to register a hook function to run before analysis begins. Hook
         function takes one :class:`~manticore.core.state.State` argument.
-        '''
-        def callback(manticore_obj, state):
-            f(state)
-        self.subscribe('will_start_run', types.MethodType(callback, self))
+        """
+        self.subscribe('will_run', f)
         return f
 
     def hook(self, pc):
-        '''
+        """
         A decorator used to register a hook function for a given instruction address.
         Equivalent to calling :func:`~add_hook`.
 
         :param pc: Address of instruction to hook
         :type pc: int or None
-        '''
+        """
         def decorator(f):
             self.add_hook(pc, f)
             return f
         return decorator
 
     def add_hook(self, pc, callback):
-        '''
+        """
         Add a callback to be invoked on executing a program counter. Pass `None`
         for pc to invoke callback on every instruction. `callback` should be a callable
         that takes one :class:`~manticore.core.state.State` argument.
@@ -193,13 +283,13 @@ class Manticore(ManticoreBase):
         :param pc: Address of instruction to hook
         :type pc: int or None
         :param callable callback: Hook function
-        '''
+        """
         if not (isinstance(pc, int) or pc is None):
             raise TypeError(f"pc must be either an int or None, not {pc.__class__.__name__}")
         else:
             self._hooks.setdefault(pc, set()).add(callback)
             if self._hooks:
-                self._executor.subscribe('will_execute_instruction', self._hook_callback)
+                self.subscribe('will_execute_instruction', self._hook_callback)
 
     def _hook_callback(self, state, pc, instruction):
         'Invoke all registered generic hooks'
@@ -253,6 +343,29 @@ class Manticore(ManticoreBase):
                 return symbols[0].entry['st_value']
 
             raise ValueError(f"The {self.binary_path} ELFfile does not contain symbol {symbol}")
+
+    def run(self, timeout=None):
+        with self.locked_context() as context:
+            context['time_started'] = time.time()
+
+        super().run(timeout=timeout)
+
+    def finalize(self):
+        super().finalize()
+        self.save_run_data()
+
+    def save_run_data(self):
+        super().save_run_data()
+
+        time_ended = time.time()
+
+        with self.locked_context() as context:
+            time_elapsed = time_ended - context['time_started']
+
+            logger.info('Total time: %s', time_elapsed)
+
+            context['time_ended'] = time_ended
+            context['time_elapsed'] = time_elapsed
 
 
 def _make_initial_state(binary_path, **kwargs):

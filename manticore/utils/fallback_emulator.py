@@ -9,6 +9,7 @@ from .helpers import issymbolic
 from unicorn import *
 from unicorn.x86_const import *
 from unicorn.arm_const import *
+from unicorn.arm64_const import *
 
 from capstone import *
 
@@ -16,9 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 class UnicornEmulator:
-    '''
+    """
     Helper class to emulate a single instruction via Unicorn.
-    '''
+    """
 
     def __init__(self, cpu):
         self._cpu = cpu
@@ -42,10 +43,9 @@ class UnicornEmulator:
 
         elif self._cpu.arch == CS_ARCH_ARM64:
             self._uc_arch = UC_ARCH_ARM64
-            self._uc_mode = {
-                CS_MODE_ARM: UC_MODE_ARM,
-                CS_MODE_THUMB: UC_MODE_THUMB
-            }[self._cpu.mode]
+            self._uc_mode = UC_MODE_ARM
+            if self._cpu.mode != UC_MODE_ARM:
+                raise Exception('Aarch64/Arm64 cannot have different uc mode than ARM.')
 
         elif self._cpu.arch == CS_ARCH_X86:
             self._uc_arch = UC_ARCH_X86
@@ -62,12 +62,12 @@ class UnicornEmulator:
         self._to_raise = None
 
     def _create_emulated_mapping(self, uc, address):
-        '''
+        """
         Create a mapping in Unicorn and note that we'll need it if we retry.
         :param uc: The Unicorn instance.
         :param address: The address which is contained by the mapping.
         :rtype Map
-        '''
+        """
 
         m = self._cpu.memory.map_containing(address)
 
@@ -88,16 +88,20 @@ class UnicornEmulator:
     def get_unicorn_pc(self):
         if self._cpu.arch == CS_ARCH_ARM:
             return self._emu.reg_read(UC_ARM_REG_R15)
+        elif self._cpu.arch == CS_ARCH_ARM64:
+            return self._emu.reg_read(UC_ARM64_REG_PC)
         elif self._cpu.arch == CS_ARCH_X86:
             if self._cpu.mode == CS_MODE_32:
                 return self._emu.reg_read(UC_X86_REG_EIP)
             elif self._cpu.mode == CS_MODE_64:
                 return self._emu.reg_read(UC_X86_REG_RIP)
+        else:
+            raise Exception(f"Getting PC after unicorn emulation for {self._cpu.arch} architecture is not implemented")
 
     def _hook_xfer_mem(self, uc, access, address, size, value, data):
-        '''
+        """
         Handle memory operations from unicorn.
-        '''
+        """
         assert access in (UC_MEM_WRITE, UC_MEM_READ, UC_MEM_FETCH)
 
         if access == UC_MEM_WRITE:
@@ -121,9 +125,9 @@ class UnicornEmulator:
         return True
 
     def _hook_unmapped(self, uc, access, address, size, value, data):
-        '''
+        """
         We hit an unmapped region; map it into unicorn.
-        '''
+        """
 
         try:
             m = self._create_emulated_mapping(uc, address)
@@ -136,9 +140,9 @@ class UnicornEmulator:
         return False
 
     def _interrupt(self, uc, number, data):
-        '''
+        """
         Handle software interrupt (SVC/INT)
-        '''
+        """
 
         from ..native.cpu.abstractcpu import Interruption  # prevent circular imports
         self._to_raise = Interruption(number)
@@ -152,29 +156,38 @@ class UnicornEmulator:
             reg_name = 'CPSR'
         if self._cpu.arch == CS_ARCH_ARM:
             return globals()['UC_ARM_REG_' + reg_name]
+        elif self._cpu.arch == CS_ARCH_ARM64:
+            return globals()['UC_ARM64_REG_' + reg_name]
         elif self._cpu.arch == CS_ARCH_X86:
             # TODO(yan): This needs to handle AF register
             return globals()['UC_X86_REG_' + reg_name]
         else:
             # TODO(yan): raise a more appropriate exception
-            raise TypeError
+            raise TypeError(f"Cannot convert {reg_name} to unicorn register id")
 
-    def emulate(self, instruction):
-        '''
+    def emulate(self, instruction, reset=True):
+        """
         Emulate a single instruction.
-        '''
+        """
 
         # The emulation might restart if Unicorn needs to bring in a memory map
         # or bring a value from Manticore state.
         while True:
+            # XXX: Unicorn doesn't allow to write to and read from system
+            # registers directly (see 'arm64_reg_write' and 'arm64_reg_read').
+            # The only way to propagate this information is via the MSR
+            # (register) and MRS instructions, without resetting the emulator
+            # state in between.
+            # Note: in HEAD, this is fixed for some system registers, so revise
+            # this after upgrading from 1.0.1.
+            if reset:
+                self.reset()
 
-            self.reset()
-
-            # Establish Manticore state, potentially from past emulation
-            # attempts
-            for base in self._should_be_mapped:
-                size, perms = self._should_be_mapped[base]
-                self._emu.mem_map(base, size, perms)
+                # Establish Manticore state, potentially from past emulation
+                # attempts
+                for base in self._should_be_mapped:
+                    size, perms = self._should_be_mapped[base]
+                    self._emu.mem_map(base, size, perms)
 
             for address, values in self._should_be_written.items():
                 for offset, byte in enumerate(values, start=address):
@@ -194,9 +207,9 @@ class UnicornEmulator:
                 break
 
     def _step(self, instruction):
-        '''
+        """
         A single attempt at executing an instruction.
-        '''
+        """
         logger.debug("0x%x:\t%s\t%s"
                      % (instruction.address, instruction.mnemonic, instruction.op_str))
 
@@ -250,7 +263,13 @@ class UnicornEmulator:
             pc = self._cpu.PC
             if self._cpu.arch == CS_ARCH_ARM and self._uc_mode == UC_MODE_THUMB:
                 pc |= 1
-            self._emu.emu_start(pc, self._cpu.PC + instruction.size, count=1)
+            # XXX: 'timeout' is needed to avoid hanging:
+            # https://github.com/unicorn-engine/unicorn/issues/1061
+            # Unfortunately, this may lead to race conditions if the value is
+            # too small.  Tests that work fine without 'timeout' start to fail
+            # because registers are not being written to.
+            self._emu.emu_start(pc, self._cpu.PC + instruction.size,
+                                count=1, timeout=1000000)  # microseconds
         except UcError as e:
             # We request re-execution by signaling error; if we we didn't set
             # _should_try_again, it was likely an actual error
@@ -279,6 +298,9 @@ class UnicornEmulator:
         mu_pc = self.get_unicorn_pc()
         if saved_PC == mu_pc:
             self._cpu.PC = saved_PC + instruction.size
+
+        else:
+            self._cpu.PC = mu_pc
 
         # Raise the exception from a hook that Unicorn would have eaten
         if self._to_raise:
