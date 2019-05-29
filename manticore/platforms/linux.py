@@ -353,7 +353,8 @@ class Socket:
         return a, b
 
     def __init__(self, recv_symbolic=True, max_recv_symbolic=80):
-        self.buffer = []  # queue os bytes
+        from collections import deque
+        self.buffer = deque()  # os bytes
         self.recv_buffs = []  # A list of list of inputs in order
         self.peer = None
         self.recv_symbolic = recv_symbolic  # Whether to have all symbolic receives
@@ -383,8 +384,9 @@ class Socket:
 
     def receive(self, size):
         rx_bytes = min(size, len(self.buffer))
-        ret = self.buffer[:rx_bytes]
-        self.buffer = self.buffer[rx_bytes:]
+        ret = []
+        for i in range(rx_bytes):
+            ret.append(self.buffer.popleft())
         self.recv_buffs.append(ret)
         return ret
 
@@ -394,7 +396,7 @@ class Socket:
 
     def _transmit(self, buf):
         for c in buf:
-            self.buffer.insert(0, c)
+            self.buffer.append(c)
         return len(buf)
 
     def sync(self):
