@@ -16,6 +16,7 @@ class DetectorClassification:
     """
     Description of detector event.
     """
+
     HIGH = 0
     MEDIUM = 1
     LOW = 2
@@ -23,10 +24,10 @@ class DetectorClassification:
 
 
 classification_txt = {
-    DetectorClassification.INFORMATIONAL: 'Informational',
-    DetectorClassification.LOW: 'Low',
-    DetectorClassification.MEDIUM: 'Medium',
-    DetectorClassification.HIGH: 'High',
+    DetectorClassification.INFORMATIONAL: "Informational",
+    DetectorClassification.LOW: "Low",
+    DetectorClassification.MEDIUM: "Medium",
+    DetectorClassification.HIGH: "High",
 }
 
 
@@ -47,14 +48,12 @@ def output_detectors(detector_classes):
         confidence = classification_txt[detector.CONFIDENCE]
         detectors_list.append((argument, help_info, impact, confidence))
 
-    table = PrettyTable(["Num",
-                         "Check",
-                         "What it Detects",
-                         "Impact",
-                         "Confidence"])
+    table = PrettyTable(["Num", "Check", "What it Detects", "Impact", "Confidence"])
 
     # Sort by impact, confidence, and name
-    detectors_list = sorted(detectors_list, key=lambda element: (element[2], element[3], element[0]))
+    detectors_list = sorted(
+        detectors_list, key=lambda element: (element[2], element[3], element[0])
+    )
     idx = 1
     for (argument, help_info, impact, confidence) in detectors_list:
         table.add_row([idx, argument, help_info, classification_txt[impact], confidence])
@@ -71,14 +70,14 @@ class Detector(Plugin):
 
     @property
     def name(self):
-        return self.__class__.__name__.split('.')[-1]
+        return self.__class__.__name__.split(".")[-1]
 
     def get_findings(self, state):
-        return state.context.setdefault(f'{self.name}.findings', set())
+        return state.context.setdefault(f"{self.name}.findings", set())
 
     @contextmanager
     def locked_global_findings(self):
-        with self.manticore.locked_context(f'{self.name}.global_findings', set) as global_findings:
+        with self.manticore.locked_context(f"{self.name}.global_findings", set) as global_findings:
             yield global_findings
 
     @property
@@ -130,7 +129,7 @@ class Detector(Plugin):
         pc = state.platform.PC
         location = (pc, finding, condition)
         hash_id = hashlib.sha1(str(location).encode()).hexdigest()
-        state.context.setdefault(f'{self.name}.locations', {})[hash_id] = location
+        state.context.setdefault(f"{self.name}.locations", {})[hash_id] = location
         return hash_id
 
     def _get_location(self, state, hash_id):
@@ -139,7 +138,7 @@ class Detector(Plugin):
 
         A location is composed of: pc, finding, condition
         """
-        return state.context.setdefault('{:s}.locations'.format(self.name), {})[hash_id]
+        return state.context.setdefault("{:s}.locations".format(self.name), {})[hash_id]
 
 
 def pc_unconstrained_heuristics(state, instruction: capstone.CsInsn) -> bool:
@@ -163,7 +162,7 @@ def pc_unconstrained_heuristics(state, instruction: capstone.CsInsn) -> bool:
     # Examples of dynamic redirection instructions are `ret`, `call r/m64`, etc. --- Instructions that do not have
     # explicit destinations.
     # TODO(ekilmer): Figure out how to get a list of these specific instructions in an architecture dependent way.
-    if instruction.mnemonic.lower() in ['call', 'ret']:
+    if instruction.mnemonic.lower() in ["call", "ret"]:
         return True
 
     # Else our heuristics don't match
@@ -177,8 +176,9 @@ class DetectArbitraryControlFlowRedirect(Detector):
     This could mean that a buffer has overwritten an address that is being used for execution and may be
     possible to exploit.
     """
-    ARGUMENT = 'arb-cf-redirect'
-    HELP = 'A potential, arbitrary, user-controlled control-flow redirection'
+
+    ARGUMENT = "arb-cf-redirect"
+    HELP = "A potential, arbitrary, user-controlled control-flow redirection"
     IMPACT = DetectorClassification.HIGH
     CONFIDENCE = DetectorClassification.MEDIUM
 
@@ -205,11 +205,13 @@ class DetectArbitraryControlFlowRedirect(Detector):
         :return: pass
         """
         if issymbolic(target_pc) and pc_unconstrained_heuristics(state, instruction):
-            finding_message = f'Previous PC was concrete (0x{pc:x}); new PC is symbolic. ' \
-                f'Instruction was {instruction.mnemonic.upper()}.'
+            finding_message = (
+                f"Previous PC was concrete (0x{pc:x}); new PC is symbolic. "
+                f"Instruction was {instruction.mnemonic.upper()}."
+            )
 
             # Generate a testcase to be inspected later
-            self.manticore.generate_testcase(state, finding_message, name='detector')
+            self.manticore.generate_testcase(state, finding_message, name="detector")
 
             # Check to see if we can reach targets
             pc_expr = state.cpu.PC
@@ -217,10 +219,10 @@ class DetectArbitraryControlFlowRedirect(Detector):
             for target in self.target_address_list:
                 # Exploit if possible
                 if state.can_be_true(pc_expr == target):
-                    finding_message += f' Can reach target 0x{target:x}'
+                    finding_message += f" Can reach target 0x{target:x}"
                     reachable_targets.append(target)
                 else:
-                    finding_message += f' Cannot reach target 0x{target:x}'
+                    finding_message += f" Cannot reach target 0x{target:x}"
 
             self.add_finding(state, pc, finding_message)
 

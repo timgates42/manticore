@@ -4,11 +4,7 @@ from binascii import unhexlify
 
 import rlp
 import sha3
-from rlp.sedes import (
-    CountableList,
-    BigEndianInt,
-    Binary,
-)
+from rlp.sedes import CountableList, BigEndianInt, Binary
 
 from manticore.core.smtlib import ConstraintSet
 from manticore.core.smtlib.visitors import to_constant
@@ -17,9 +13,9 @@ from manticore.platforms import evm
 
 class Log(rlp.Serializable):
     fields = [
-        ('address', Binary.fixed_length(20, allow_empty=True)),
-        ('topics', CountableList(BigEndianInt(32))),
-        ('data', Binary())
+        ("address", Binary.fixed_length(20, allow_empty=True)),
+        ("topics", CountableList(BigEndianInt(32))),
+        ("data", Binary()),
     ]
 
 
@@ -33,7 +29,7 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        evm.DEFAULT_FORK = 'frontier'
+        evm.DEFAULT_FORK = "frontier"
 
     @classmethod
     def tearDownClass(cls):
@@ -48,54 +44,74 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   CALLDATALOAD
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('7f420000000000000000000000000000000000000000000000000000000000000035600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify(
+            "7f420000000000000000000000000000000000000000000000000000000000000035600055"
+        )
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('4200000000000000000000000000000000000000000000000000000000000000')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("4200000000000000000000000000000000000000000000000000000000000000")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('7f420000000000000000000000000000000000000000000000000000000000000035600055'))
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify("7f420000000000000000000000000000000000000000000000000000000000000035600055"),
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999994991)
 
@@ -112,54 +128,72 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   MLOAD
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('60006001600037600051600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("60006001600037600051600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('60006001600037600051600055'))
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify("60006001600037600051600055"),
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999994976)
 
@@ -171,56 +205,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
         Code:     ADDRESS
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('30600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("30600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = ''
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = ""
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('30600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0x0f572e5295c57f15886f9b263e2f6d2d6c7b5ec6)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), unhexlify("30600055")
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0x0F572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979995)
 
@@ -240,54 +294,75 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   MSIZE
                   PUSH1 0x0
                   RETURN
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('60006001600037600051600055596000f3')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("60006001600037600051600055596000f3")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=1000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 1000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('60006001600037600051600055596000f3'))
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            1000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify("60006001600037600051600055596000f3"),
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify('0000000000000000000000000000000000000000000000000000000000000000'))
+        self.assertEqual(
+            returndata,
+            unhexlify("0000000000000000000000000000000000000000000000000000000000000000"),
+        )
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999994971)
 
@@ -300,56 +375,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   CALLDATALOAD
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('600535600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("600535600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('123456789abcdef00000000000000000000000000000000000000000000000000024')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("123456789abcdef00000000000000000000000000000000000000000000000000024")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('600535600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0xbcdef00000000000000000000000000000000000000000000000000024000000)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), unhexlify("600535600055")
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0xBCDEF00000000000000000000000000000000000000000000000000024000000,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979991)
 
@@ -361,56 +456,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
         Code:     ORIGIN
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('32600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("32600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = ''
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = ""
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('32600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0xcd1722f3947def4cf144679da39c4c32bdc35681)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), unhexlify("32600055")
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0xCD1722F3947DEF4CF144679DA39C4C32BDC35681,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979995)
 
@@ -427,54 +542,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   MLOAD
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('60ff7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify(
+            "60ff7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055"
+        )
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('60ff7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055'))
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify(
+                "60ff7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055"
+            ),
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999994931)
 
@@ -486,56 +623,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
         Code:     ADDRESS
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('30600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("30600055")
         world.create_account(
-            address=0xcd1722f3947def4cf144679da39c4c32bdc35681,
+            address=0xCD1722F3947DEF4CF144679DA39C4C32BDC35681,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xcd1722f3947def4cf144679da39c4c32bdc35681
-        price = 0x3b9aca00
-        data = ''
-        caller = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
+        address = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
+        price = 0x3B9ACA00
+        data = ""
+        caller = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xcd1722f3947def4cf144679da39c4c32bdc35681
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xcd1722f3947def4cf144679da39c4c32bdc35681), 0)
-        self.assertEqual(to_constant(world.get_balance(0xcd1722f3947def4cf144679da39c4c32bdc35681)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xcd1722f3947def4cf144679da39c4c32bdc35681), unhexlify('30600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xcd1722f3947def4cf144679da39c4c32bdc35681, 0x00)), 0xcd1722f3947def4cf144679da39c4c32bdc35681)
+        self.assertEqual(world.get_nonce(0xCD1722F3947DEF4CF144679DA39C4C32BDC35681), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xCD1722F3947DEF4CF144679DA39C4C32BDC35681)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xCD1722F3947DEF4CF144679DA39C4C32BDC35681), unhexlify("30600055")
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xCD1722F3947DEF4CF144679DA39C4C32BDC35681, 0x00)),
+            0xCD1722F3947DEF4CF144679DA39C4C32BDC35681,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979995)
 
@@ -547,44 +704,50 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
         Code:     PUSH1 0x1
                   PUSH1 0x2
                   CALLDATACOPY
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('6001600237')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("6001600237")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
-        #If test end in exception check it here
-        self.assertTrue(result == 'THROW')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
+        # If test end in exception check it here
+        self.assertTrue(result == "THROW")
 
     def test_calldatacopy_DataIndexTooHigh_return(self):
         """
@@ -602,54 +765,81 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   MSIZE
                   PUSH1 0x0
                   RETURN
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('60ff7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055596000f3')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify(
+            "60ff7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055596000f3"
+        )
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=1000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 1000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('60ff7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055596000f3'))
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            1000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify(
+                "60ff7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055596000f3"
+            ),
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify('00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'))
+        self.assertEqual(
+            returndata,
+            unhexlify(
+                "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            ),
+        )
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999994926)
 
@@ -661,56 +851,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
         Code:     CALLER
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('33600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("33600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = ''
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = ""
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('33600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0xcd1722f3947def4cf144679da39c4c32bdc35681)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), unhexlify("33600055")
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0xCD1722F3947DEF4CF144679DA39C4C32BDC35681,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979995)
 
@@ -722,56 +932,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
         Code:     GASPRICE
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('3a600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("3a600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x75bcd15
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x75BCD15
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('3a600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0x075bcd15)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), unhexlify("3a600055")
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0x075BCD15,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979995)
 
@@ -788,56 +1018,77 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   MLOAD
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('60056000600039600051600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("60056000600039600051600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('60056000600039600051600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0x6005600060000000000000000000000000000000000000000000000000000000)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify("60056000600039600051600055"),
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0x6005600060000000000000000000000000000000000000000000000000000000,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979973)
 
@@ -857,54 +1108,75 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   MSIZE
                   PUSH1 0x0
                   RETURN
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('60006000600037600051600055596000f3')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("60006000600037600051600055596000f3")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=1000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 1000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('60006000600037600051600055596000f3'))
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            1000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify("60006000600037600051600055596000f3"),
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify('0000000000000000000000000000000000000000000000000000000000000000'))
+        self.assertEqual(
+            returndata,
+            unhexlify("0000000000000000000000000000000000000000000000000000000000000000"),
+        )
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999994971)
 
@@ -924,56 +1196,80 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   MSIZE
                   PUSH1 0x0
                   RETURN
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('60016001600037600051600055596000f3')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("60016001600037600051600055596000f3")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=1000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 1000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('60016001600037600051600055596000f3'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0x3400000000000000000000000000000000000000000000000000000000000000)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            1000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify("60016001600037600051600055596000f3"),
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0x3400000000000000000000000000000000000000000000000000000000000000,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify('3400000000000000000000000000000000000000000000000000000000000000'))
+        self.assertEqual(
+            returndata,
+            unhexlify("3400000000000000000000000000000000000000000000000000000000000000"),
+        )
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979968)
 
@@ -985,56 +1281,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
         Code:     CALLDATASIZE
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('36600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("36600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('230000000000000000000000000000000000000000000000000000000000000023')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("230000000000000000000000000000000000000000000000000000000000000023")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('36600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0x21)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), unhexlify("36600055")
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0x21,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979995)
 
@@ -1051,54 +1367,72 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   MLOAD
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('60006000600039600051600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("60006000600039600051600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('60006000600039600051600055'))
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify("60006000600039600051600055"),
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999994976)
 
@@ -1129,56 +1463,81 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   PUSH5 0xbadc0ffee
                   PUSH1 0xff
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('6005565b005b6042601f536101036000601f3760005180606014600357640badc0ffee60ff55')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify(
+            "6005565b005b6042601f536101036000601f3760005180606014600357640badc0ffee60ff55"
+        )
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=1000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 1000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('6005565b005b6042601f536101036000601f3760005180606014600357640badc0ffee60ff55'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0xff)), 0x0badc0ffee)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            1000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify(
+                "6005565b005b6042601f536101036000601f3760005180606014600357640badc0ffee60ff55"
+            ),
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0xFF)),
+            0x0BADC0FFEE,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979876)
 
@@ -1190,56 +1549,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
         Code:     CALLDATASIZE
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('36600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("36600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff23')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff23")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('36600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0x21)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), unhexlify("36600055")
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0x21,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979995)
 
@@ -1256,54 +1635,72 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   MLOAD
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('60006000600037600051600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("60006000600037600051600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('60006000600037600051600055'))
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify("60006000600037600051600055"),
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999994976)
 
@@ -1320,54 +1717,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   MLOAD
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('60087ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600039600051600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify(
+            "60087ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600039600051600055"
+        )
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('60087ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600039600051600055'))
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify(
+                "60087ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600039600051600055"
+            ),
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999994973)
 
@@ -1379,56 +1798,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
         Code:     CODESIZE
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('38600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("38600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('38600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0x04)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), unhexlify("38600055")
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0x04,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979995)
 
@@ -1441,56 +1880,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   CALLDATALOAD
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('600a35600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("600a35600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('123456789abcdef00000000000000000000000000000000000000000000024')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("123456789abcdef00000000000000000000000000000000000000000000024")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('600a35600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0x240000000000000000000000)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), unhexlify("600a35600055")
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0x240000000000000000000000,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979991)
 
@@ -1507,54 +1966,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   MLOAD
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('60097ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify(
+            "60097ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055"
+        )
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('60097ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055'))
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify(
+                "60097ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055"
+            ),
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999994973)
 
@@ -1566,56 +2047,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
         Code:     CALLDATASIZE
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('36600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("36600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('2560')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("2560")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('36600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0x02)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), unhexlify("36600055")
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0x02,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979995)
 
@@ -1628,54 +2129,74 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   CALLDATALOAD
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa35600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify(
+            "7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa35600055"
+        )
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('123456789abcdef00000000000000000000000000000000000000000000000000024')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("123456789abcdef00000000000000000000000000000000000000000000000000024")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa35600055'))
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify("7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa35600055"),
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999994991)
 
@@ -1692,56 +2213,77 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   MLOAD
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('60026001600037600051600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("60026001600037600051600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('60026001600037600051600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0x3456000000000000000000000000000000000000000000000000000000000000)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify("60026001600037600051600055"),
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0x3456000000000000000000000000000000000000000000000000000000000000,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979973)
 
@@ -1761,56 +2303,80 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   MSIZE
                   PUSH1 0x0
                   RETURN
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('60026001600037600051600055596000f3')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("60026001600037600051600055596000f3")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=1000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 1000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('60026001600037600051600055596000f3'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0x3456000000000000000000000000000000000000000000000000000000000000)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            1000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify("60026001600037600051600055596000f3"),
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0x3456000000000000000000000000000000000000000000000000000000000000,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify('3456000000000000000000000000000000000000000000000000000000000000'))
+        self.assertEqual(
+            returndata,
+            unhexlify("3456000000000000000000000000000000000000000000000000000000000000"),
+        )
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979968)
 
@@ -1823,56 +2389,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   CALLDATALOAD
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('600035600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("600035600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('2560')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("2560")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('600035600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0x2560000000000000000000000000000000000000000000000000000000000000)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), unhexlify("600035600055")
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0x2560000000000000000000000000000000000000000000000000000000000000,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979991)
 
@@ -1892,54 +2478,79 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   MSIZE
                   PUSH1 0x0
                   RETURN
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('60097ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055596000f3')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify(
+            "60097ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055596000f3"
+        )
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=1000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 1000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('60097ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055596000f3'))
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            1000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify(
+                "60097ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa600037600051600055596000f3"
+            ),
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify('0000000000000000000000000000000000000000000000000000000000000000'))
+        self.assertEqual(
+            returndata,
+            unhexlify("0000000000000000000000000000000000000000000000000000000000000000"),
+        )
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999994968)
 
@@ -1952,56 +2563,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   CALLDATALOAD
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('600135600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("600135600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff23')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff23")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('600135600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff23)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), unhexlify("600135600055")
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF23,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979991)
 
@@ -2013,56 +2644,76 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
         Code:     CALLVALUE
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('34600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("34600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = ''
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = ""
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('34600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0x0de0b6b3a7640000)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), unhexlify("34600055")
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0x0DE0B6B3A7640000,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979995)
 
@@ -2079,59 +2730,80 @@ class EVMTest_vmEnvironmentalInfo(unittest.TestCase):
                   MLOAD
                   PUSH1 0x0
                   SSTORE
-        """    
-    
+        """
+
         constraints = ConstraintSet()
-        world = evm.EVMWorld(constraints, blocknumber=0, timestamp=1, difficulty=256,
-                             coinbase=244687034288125203496486448490407391986876152250, gaslimit=1000000)
-    
-        bytecode = unhexlify('60016001600037600051600055')
+        world = evm.EVMWorld(
+            constraints,
+            blocknumber=0,
+            timestamp=1,
+            difficulty=256,
+            coinbase=244687034288125203496486448490407391986876152250,
+            gaslimit=1000000,
+        )
+
+        bytecode = unhexlify("60016001600037600051600055")
         world.create_account(
-            address=0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6,
+            address=0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6,
             balance=100000000000000000000000,
             code=bytecode,
-            nonce=0
+            nonce=0,
         )
-        address = 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
-        price = 0x3b9aca00
-        data = unhexlify('1234567890abcdef01234567890abcdef0')
-        caller = 0xcd1722f3947def4cf144679da39c4c32bdc35681
+        address = 0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6
+        price = 0x3B9ACA00
+        data = unhexlify("1234567890abcdef01234567890abcdef0")
+        caller = 0xCD1722F3947DEF4CF144679DA39C4C32BDC35681
         value = 1000000000000000000
         gas = 100000000000
 
         # open a fake tx, no funds send
-        world._open_transaction('CALL', address, price, data, caller, value, gas=gas)
+        world._open_transaction("CALL", address, price, data, caller, value, gas=gas)
 
         # This variable might seem redundant in some tests - don't forget it is auto generated
         # and there are cases in which we need it ;)
         result = None
-        returndata = b''
+        returndata = b""
         try:
             while True:
                 world.current_vm.execute()
         except evm.EndTx as e:
             result = e.result
-            if result in ('RETURN', 'REVERT'):
+            if result in ("RETURN", "REVERT"):
                 returndata = to_constant(e.data)
         except evm.StartTx as e:
-            self.fail('This tests should not initiate an internal tx (no CALLs allowed)')
+            self.fail("This tests should not initiate an internal tx (no CALLs allowed)")
         # Add pos checks for account 0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6
         # check nonce, balance, code
-        self.assertEqual(world.get_nonce(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), 0)
-        self.assertEqual(to_constant(world.get_balance(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6)), 100000000000000000000000)
-        self.assertEqual(world.get_code(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6), unhexlify('60016001600037600051600055'))
-        #check storage
-        self.assertEqual(to_constant(world.get_storage_data(0xf572e5295c57f15886f9b263e2f6d2d6c7b5ec6, 0x00)), 0x3400000000000000000000000000000000000000000000000000000000000000)
+        self.assertEqual(world.get_nonce(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6), 0)
+        self.assertEqual(
+            to_constant(world.get_balance(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6)),
+            100000000000000000000000,
+        )
+        self.assertEqual(
+            world.get_code(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6),
+            unhexlify("60016001600037600051600055"),
+        )
+        # check storage
+        self.assertEqual(
+            to_constant(world.get_storage_data(0xF572E5295C57F15886F9B263E2F6D2D6C7B5EC6, 0x00)),
+            0x3400000000000000000000000000000000000000000000000000000000000000,
+        )
         # check outs
-        self.assertEqual(returndata, unhexlify(''))
+        self.assertEqual(returndata, unhexlify(""))
         # check logs
-        logs = [Log(unhexlify('{:040x}'.format(l.address)), l.topics, to_constant(l.memlog)) for l in world.logs]
+        logs = [
+            Log(unhexlify("{:040x}".format(l.address)), l.topics, to_constant(l.memlog))
+            for l in world.logs
+        ]
         data = rlp.encode(logs)
-        self.assertEqual(sha3.keccak_256(data).hexdigest(), '1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347')
-        
+        self.assertEqual(
+            sha3.keccak_256(data).hexdigest(),
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        )
+
         # test used gas
         self.assertEqual(to_constant(world.current_vm.gas), 99999979973)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

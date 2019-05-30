@@ -5,9 +5,9 @@ import collections.abc
 
 def int_to_bytes(n):
     if n == 0:
-        return b'\0'
+        return b"\0"
     else:
-        return n.to_bytes((n.bit_length() + 7) // 8, 'big')
+        return n.to_bytes((n.bit_length() + 7) // 8, "big")
 
 
 def rlp_encode(item):
@@ -45,9 +45,9 @@ def rlp_encode(item):
 
     """
     if item is None or item == 0:
-        ret = b'\x80'
+        ret = b"\x80"
     elif isinstance(item, str):
-        ret = rlp_encode(item.encode('utf8'))
+        ret = rlp_encode(item.encode("utf8"))
     elif isinstance(item, (bytearray, bytes)):
         if len(item) == 1 and item[0] < 0x80:
             # For a single byte whose value is in the [0x00, 0x7f] range, that byte is its own RLP encoding.
@@ -55,7 +55,7 @@ def rlp_encode(item):
         else:
             ret = encode_length(len(item), 0x80) + item
     elif isinstance(item, collections.abc.Sequence):
-        output = b''.join(map(rlp_encode, item))
+        output = b"".join(map(rlp_encode, item))
         ret = encode_length(len(output), 0xC0) + output
     elif isinstance(item, int):
         ret = rlp_encode(int_to_bytes(item))
@@ -70,7 +70,7 @@ def encode_length(length, offset):
         # the RLP encoding consists of a single byte with value 0x80
         # plus the length of the string followed by the string.
         return int_to_bytes(length + offset)
-    elif length < 256**8:
+    elif length < 256 ** 8:
         # if a string is more than 55 bytes long, the RLP encoding consists of
         # a single byte with value 0xb7 plus the length in bytes of the length of the string in binary form,
         # followed by the length of the string, followed by the string.
@@ -78,24 +78,25 @@ def encode_length(length, offset):
         binary = to_binary(length)
         return int_to_bytes(len(binary) + offset + 55) + binary
     else:
-        raise Exception("length must be less than %d" % 256**8)
+        raise Exception("length must be less than %d" % 256 ** 8)
 
 
 def to_binary(x):
     if x == 0:
-        return b''
+        return b""
     else:
         return to_binary(int(x / 256)) + int_to_bytes(x % 256)
 
 
 if __name__ == "__main__":
     import sys
+
     passed = True
 
     def to_list(encoded):
         ret = []
         for c in encoded:
-            if c >= ord(' ') and c <= ord('~'):
+            if c >= ord(" ") and c <= ord("~"):
                 ret.append(chr(c))
             else:
                 ret.append(c)
@@ -106,25 +107,29 @@ if __name__ == "__main__":
             return ord(exp)
         else:
             return exp
+
     LOREM_IPSUM = "Lorem ipsum dolor sit amet, consectetur adipisicing elit"
     for item, expected in (
-            ('dog', [0x83, 'd', 'o', 'g']),
-            (['cat', 'dog'], [0xc8, 0x83, 'c', 'a', 't', 0x83, 'd', 'o', 'g']),
-            ('', [0x80]),
-            ([], [0xc0]),
-            (0, [0x80]),
-            ('\x00', [0x00]),
-            (15, [0x0f]),
-            (1024, [0x82, 0x04, 0x00]),
-            ([[], [[]], [[], [[]]]], [0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0]),
-            ('1024 Bytes Long' + '\0' * 1009, [0xb9, 0x04, 0x00] + list('1024 Bytes Long' + '\0' * 1009)),
-            (LOREM_IPSUM, [0xb8, 0x38] + list(LOREM_IPSUM))
+        ("dog", [0x83, "d", "o", "g"]),
+        (["cat", "dog"], [0xC8, 0x83, "c", "a", "t", 0x83, "d", "o", "g"]),
+        ("", [0x80]),
+        ([], [0xC0]),
+        (0, [0x80]),
+        ("\x00", [0x00]),
+        (15, [0x0F]),
+        (1024, [0x82, 0x04, 0x00]),
+        ([[], [[]], [[], [[]]]], [0xC7, 0xC0, 0xC1, 0xC0, 0xC3, 0xC0, 0xC1, 0xC0]),
+        (
+            "1024 Bytes Long" + "\0" * 1009,
+            [0xB9, 0x04, 0x00] + list("1024 Bytes Long" + "\0" * 1009),
+        ),
+        (LOREM_IPSUM, [0xB8, 0x38] + list(LOREM_IPSUM)),
     ):
         sys.stdout.write("Testing %s" % str(item))
         expected_bytes = bytes(map(to_int, expected))
         encoding = rlp_encode(item)
         if encoding == expected_bytes:
-            sys.stdout.write(' ✓\n')
+            sys.stdout.write(" ✓\n")
         else:
             sys.stdout.write(" ✗ expected %s but got %s\n" % (expected, to_list(encoding)))
             passed = False
