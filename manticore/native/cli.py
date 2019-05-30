@@ -47,7 +47,7 @@ def native_main(args, _logger):
 
     # Default plugins for now.. FIXME REMOVE!
     m.register_plugin(InstructionCounter())
-    m.register_plugin(Visited())
+    m.register_plugin(Visited(args.coverage))
     m.register_plugin(Tracer())
     m.register_plugin(RecordSymbolicBranches())
 
@@ -65,10 +65,9 @@ def native_main(args, _logger):
         m.load_assertions(args.assertions)
 
     @m.init
-    def init(m, ready_states):
+    def init(state):
         for file in args.files:
-            for state in ready_states:
-                state.platform.add_symbolic_file(file)
+            state.platform.add_symbolic_file(file)
 
     for detector in list(m.detectors):
         m.unregister_detector(detector)

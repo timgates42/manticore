@@ -1276,6 +1276,53 @@ Using the SAR instruction to perform a division operation does not produce the s
             temp_cs.add(condition == False)
             self.assertFalse(solver.check(temp_cs))
 
+    def test_MOVHPS_1(self):
+        mem = Memory32()
+        cpu = I386Cpu(mem)
+        mem.mmap(0x0041E000, 0x1000, "rwx")
+
+        # 3.14
+        mem[0x0041E000] = "\x40"
+        mem[0x0041E001] = "\x48"
+        mem[0x0041E002] = "\xf5"
+        mem[0x0041E003] = "\xc3"
+
+        # 6.28
+        mem[0x0041E004] = "\x40"
+        mem[0x0041E005] = "\xc8"
+        mem[0x0041E006] = "\xf5"
+        mem[0x0041E007] = "\xc3"
+
+        # movhps xmm0, qword ptr [eax]
+        mem[0x0041E10A] = "\x0f"
+        mem[0x0041E10B] = "\x16"
+        mem[0x0041E10C] = "\x00"
+
+        cpu.RIP = 0x41E10A
+        cpu.EAX = 0x41E000
+        cpu.XMM0 = 0x0000000000000000FFFFFFFFFFFFFFFF
+        cpu.execute()
+
+        self.assertEqual(cpu.XMM0, 0xC3F5C840C3F54840FFFFFFFFFFFFFFFF)
+
+    def test_MOVHPS_2(self):
+        mem = Memory32()
+        cpu = I386Cpu(mem)
+        mem.mmap(0x0041E000, 0x1000, "rwx")
+
+        # movhps qword ptr [eax], xmm1
+        mem[0x0041E10A] = "\x0f"
+        mem[0x0041E10B] = "\x17"
+        mem[0x0041E10C] = "\x08"
+
+        cpu.RIP = 0x41E10A
+        cpu.EAX = 0x41E000
+        cpu.XMM1 = 0x4048F5C340C8F5C3FFFFFFFFFFFFFFFF
+        cpu.execute()
+
+        self.assertItemsEqual(mem[0x41E000:0x41E004], to_bytelist(b"\x40\xc8\xf5\xc3"))
+        self.assertItemsEqual(mem[0x41E004:0x41E008], to_bytelist(b"\x40\x48\xf5\xc3"))
+
     def test_symbolic_instruction(self):
         cs = ConstraintSet()
         mem = SMemory32(cs)

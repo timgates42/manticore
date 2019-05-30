@@ -1165,7 +1165,6 @@ class ManticoreEVM(ManticoreBase):
         if contract_account is None:
             logger.info("Failed to create contract: exception in constructor")
             return
-
         prev_coverage = 0
         current_coverage = 0
         tx_no = 0
@@ -1478,13 +1477,16 @@ class ManticoreEVM(ManticoreBase):
                 else:
                     return False
 
+        blockchain = state.platform
+
         # FIXME. workspace should not be responsible for formating the output
         # each object knows its secrets, and each class should be able to report
         # its final state
-        testcase = super().generate_testcase(state, message, name=name)
+        testcase = super().generate_testcase(
+            state, message + f"({len(blockchain.human_transactions)} txs)", name=name
+        )
         # TODO(mark): Refactor ManticoreOutput to let the platform be more in control
         #  so this function can be fully ported to EVMWorld.generate_workspace_files.
-        blockchain = state.platform
 
         local_findings = set()
         for detector in self.detectors.values():
