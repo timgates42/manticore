@@ -6,8 +6,7 @@ import capstone
 from prettytable import PrettyTable
 
 from ..core.plugin import Plugin
-from ..core.smtlib import Constant, Operators
-from ..utils.helpers import issymbolic
+from ..core.smtlib import Constant, Operators, issymbolic
 
 logger = logging.getLogger(__name__)
 
