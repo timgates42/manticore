@@ -22,14 +22,13 @@ from elftools.elf.sections import SymbolTableSection
 from . import linux_syscalls
 from .linux_syscall_stubs import SyscallStubs
 from ..core.state import TerminateState
-from ..core.smtlib import ConstraintSet, Operators, Expression
+from ..core.smtlib import ConstraintSet, Operators, Expression, issymbolic
 from ..core.smtlib.solver import Z3Solver
 from ..exceptions import SolverError
 from ..native.cpu.abstractcpu import Syscall, ConcretizeArgument, Interruption
 from ..native.cpu.cpufactory import CpuFactory
 from ..native.memory import SMemory32, SMemory64, Memory32, Memory64, LazySMemory32, LazySMemory64
 from ..platforms.platform import Platform, SyscallNotImplemented, unimplemented
-from ..utils.helpers import issymbolic
 
 logger = logging.getLogger(__name__)
 
@@ -2719,7 +2718,7 @@ class Linux(Platform):
             stat = item.stat()
             print(f"FILE MODE: {item.name} :: {stat.st_mode:o}")
 
-            # https://elixir.bootlin.com/linux/latest/source/include/linux/fs_types.h#L27
+            # https://elixir.bootlin.com/linux/v5.1.15/source/include/linux/fs_types.h#L27
             d_type = (stat.st_mode >> 12) & 15
 
             packed = struct.pack(

@@ -11,13 +11,12 @@ import unicorn
 from .disasm import init_disassembler
 from ..memory import ConcretizeMemory, InvalidMemoryAccess, FileMap, AnonMap
 from ..memory import LazySMemory
-from ...core.smtlib import Expression, BitVec, Operators, Constant
+from ...core.smtlib import Expression, BitVec, Operators, Constant, issymbolic
 from ...core.smtlib import visitors
 from ...core.smtlib.solver import Z3Solver
 from ...utils.emulate import ConcreteUnicornEmulator
 from ...utils.event import Eventful
 from ...utils.fallback_emulator import UnicornEmulator
-from ...utils.helpers import issymbolic
 
 from capstone import CS_ARCH_ARM64, CS_ARCH_X86, CS_ARCH_ARM
 from capstone.arm64 import ARM64_REG_ENDING
@@ -776,11 +775,14 @@ class Cpu(Eventful):
     def write_string(self, where, string, max_length=None, force=False):
         """
         Writes a string to memory, appending a NULL-terminator at the end.
+
         :param int where: Address to write the string to
         :param str string: The string to write to memory
         :param int max_length:
-            The size in bytes to cap the string at, or None [default] for no
-            limit. This includes the NULL terminator.
+
+        The size in bytes to cap the string at, or None [default] for no
+        limit. This includes the NULL terminator.
+
         :param force: whether to ignore memory permissions
         """
 

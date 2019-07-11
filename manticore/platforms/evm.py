@@ -6,7 +6,6 @@ import copy
 import inspect
 from functools import wraps
 from typing import List, Set, Tuple, Union
-from ..utils.helpers import issymbolic, get_taints, taint_with, istainted
 from ..platforms.platform import *
 from ..core.smtlib import (
     Z3Solver,
@@ -21,6 +20,10 @@ from ..core.smtlib import (
     translate_to_smtlib,
     to_constant,
     simplify,
+    issymbolic,
+    get_taints,
+    istainted,
+    taint_with,
 )
 from ..core.state import Concretize, TerminateState
 from ..utils.event import Eventful
@@ -500,11 +503,11 @@ def concretized_args(**policies):
     Example decoration:
 
         @concretized_args(size='ONE', address='')
-        def LOG(self, address, size, *topics):
-            ...
+        def LOG(self, address, size, \*topics):
+        ...
 
-    The above will make sure that the |size| parameter to LOG is Concretized when symbolic
-    according to the 'ONE' policy and concretize |address| with the default policy.
+    The above will make sure that the *size* parameter to LOG is Concretized when symbolic
+    according to the 'ONE' policy and concretize *address* with the default policy.
 
     :param policies: A kwargs list of argument names and their respective policies.
                          Provide None or '' as policy to use default.
@@ -2604,6 +2607,7 @@ class EVMWorld(Platform):
     def block_hash(self, block_number=None, force_recent=True):
         """
         Calculates a block's hash
+
         :param block_number: the block number for which to calculate the hash, defaulting to the most recent block
         :param force_recent: if True (the default) return zero for any block that is in the future or older than 256 blocks
         :return: the block hash
@@ -2686,6 +2690,7 @@ class EVMWorld(Platform):
     def create_account(self, address=None, balance=0, code=None, storage=None, nonce=None):
         """
         Low level account creation. No transaction is done.
+
         :param address: the address of the account, if known. If omitted, a new address will be generated as closely to the Yellow Paper as possible.
         :param balance: the initial balance of the account in Wei
         :param code: the runtime code of the account, if a contract
@@ -2787,6 +2792,7 @@ class EVMWorld(Platform):
     ):
         """
         Initiate a transaction
+
         :param sort: the type of transaction. CREATE or CALL or DELEGATECALL
         :param address: the address of the account which owns the code that is executing.
         :param price: the price of gas in the transaction that originated this execution.
@@ -2832,7 +2838,7 @@ class EVMWorld(Platform):
 
             def set_address(state, solution):
                 world = state.platform
-                world._pending_transaction = sort, solution, price, data, caller, value, gas
+                world._pending_transaction = (sort, solution, price, data, caller, value, gas)
 
             cond = self._constraint_to_accounts(address, ty="contract", include_zero=False)
             self.constraints.add(cond)
@@ -2849,7 +2855,7 @@ class EVMWorld(Platform):
 
             def set_caller(state, solution):
                 world = state.platform
-                world._pending_transaction = sort, address, price, data, solution, value, gas
+                world._pending_transaction = (sort, address, price, data, solution, value, gas)
 
             # Constrain it so it can range over all normal accounts
             cond = self._constraint_to_accounts(caller, ty="normal")

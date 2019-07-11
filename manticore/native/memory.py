@@ -9,9 +9,10 @@ from ..core.smtlib import (
     BitVec,
     BitVecConstant,
     expression,
+    issymbolic,
 )
 from ..native.mappings import mmap, munmap
-from ..utils.helpers import issymbolic, interval_intersection
+from ..utils.helpers import interval_intersection
 
 import functools
 import logging
@@ -1027,7 +1028,7 @@ class SMemory(Memory):
             self._symbols = dict(symbols)
 
     def __reduce__(self):
-        return self.__class__, (self.constraints, self._symbols, self._maps), {"cpu": self.cpu}
+        return (self.__class__, (self.constraints, self._symbols, self._maps), {"cpu": self.cpu})
 
     @property
     def constraints(self):
@@ -1145,11 +1146,13 @@ class SMemory(Memory):
     def write(self, address, value, force=False):
         """
         Write a value at address.
+
         :param address: The address at which to write
         :type address: int or long or Expression
         :param value: Bytes to write
         :type value: str or list
         :param force: Whether to ignore permissions
+
         """
         size = len(value)
         if issymbolic(address):
