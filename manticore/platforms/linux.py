@@ -3101,6 +3101,33 @@ class SLinux(Linux):
     def sys_accept(self, sockfd, addr, addrlen):
         return super().sys_accept(sockfd, addr, addrlen)
 
+    def sys_mmap(self, address, size, prot, flags, fd, offset):
+        if issymbolic(address):
+            logger.debug("Symbolic address. Concretizing")
+            raise ConcretizeArgument(self, 0)
+
+        if issymbolic(size):
+            logger.debug("Symbolic number of bytes. Concretizing")
+            raise ConcretizeArgument(self, 1)
+
+        if issymbolic(prot):
+            logger.debug("Symbolic protection mode. Concretizing")
+            raise ConcretizeArgument(self, 2)
+
+        if issymbolic(flags):
+            logger.debug("Symbolic flags. Concretizing")
+            raise ConcretizeArgument(self, 3)
+
+        if issymbolic(fd):
+            logger.debug("Symbolic fd. Concretizing")
+            raise ConcretizeArgument(self, 4)
+
+        if issymbolic(fd):
+            logger.debug("Symbolic offset. Concretizing")
+            raise ConcretizeArgument(self, 5)
+
+        return super().sys_mmap(address, size, prot, flags, fd, offset)
+
     def sys_open(self, buf, flags, mode):
         """
         A version of open(2) that includes a special case for a symbolic path.
