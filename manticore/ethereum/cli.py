@@ -12,6 +12,7 @@ from .detectors import (
     DetectEnvInstruction,
     DetectRaceCondition,
     DetectorClassification,
+    DetectManipulableBalance,
 )
 from ..core.plugin import Profiler
 from .manticore import ManticoreEVM
@@ -36,6 +37,7 @@ def get_detectors_classes():
         DetectDelegatecall,
         DetectExternalCallAndLeak,
         DetectEnvInstruction,
+        DetectManipulableBalance,
         # The RaceCondition detector has been disabled for now as it seems to collide with IntegerOverflow detector
         # DetectRaceCondition
     ]
@@ -105,6 +107,7 @@ def ethereum_main(args, logger):
                 tx_send_ether=not args.txnoether,
                 tx_account=args.txaccount,
                 tx_preconstrain=args.txpreconstrain,
+                crytic_compile_args=vars(args),
             )
 
         if not args.no_testcases:

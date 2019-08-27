@@ -19,6 +19,7 @@ from manticore.ethereum import (
     DetectExternalCallAndLeak,
     DetectEnvInstruction,
     DetectRaceCondition,
+    DetectManipulableBalance,
     State,
 )
 from manticore.ethereum.plugins import LoopDepthLimiter
@@ -67,9 +68,13 @@ class EthDetectorTest(unittest.TestCase):
             ctor_arg = ()
 
         self.mevm.register_detector(self.DETECTOR_CLASS())
+
         with self.mevm.kill_timeout(240):
             mevm.multi_tx_analysis(
-                filepath, contract_name="DetectThis", args=ctor_arg, working_dir=dir
+                filepath,
+                contract_name="DetectThis",
+                args=ctor_arg,
+                crytic_compile_args={"solc_working_dir": dir},
             )
 
         expected_findings = set(((finding, at_init) for finding, at_init in should_find))
@@ -388,6 +393,20 @@ class EthRaceCondition(EthDetectorTest):
                 ),
             },
         )
+
+
+class EthBalance(EthDetectorTest):
+    """ Test the detection of funny delegatecalls """
+
+    DETECTOR_CLASS = DetectManipulableBalance
+
+    def test_balance_ok(self):
+        name = inspect.currentframe().f_code.co_name[5:]
+        self._test(name, set())
+
+    def test_balance_not_ok(self):
+        name = inspect.currentframe().f_code.co_name[5:]
+        self._test(name, {(("Manipulable balance used in a strict comparison", False))})
 
 
 if __name__ == "__main__":
