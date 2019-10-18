@@ -1,10 +1,12 @@
 from ...utils.helpers import CacheDict
+from ...exceptions import SmtlibError
 from .expression import *
 from functools import lru_cache
 import logging
 import operator
 
 logger = logging.getLogger(__name__)
+UNSIGN_MASK = (1 << 256) - 1
 
 
 class Visitor:
@@ -135,7 +137,7 @@ class Translator(Visitor):
                 value = getattr(self, methodname)(expression, *args)
                 if value is not None:
                     return value
-        raise Exception(f"No translation for this {expression}")
+        raise SmtlibError(f"No translation for this {expression}")
 
 
 class GetDeclarations(Visitor):
@@ -281,6 +283,7 @@ class ConstantFolderSimplifier(Visitor):
         BoolAnd: operator.__and__,
         BoolOr: operator.__or__,
         BoolNot: operator.__not__,
+        BitVecUnsignedDiv: lambda x, y: (x & UNSIGN_MASK) // (y & UNSIGN_MASK),
     }
 
     def visit_BitVecConcat(self, expression, *operands):
@@ -747,7 +750,7 @@ class TranslatorSmtlib(Translator):
 
     @property
     def results(self):
-        raise Exception("NOOO")
+        raise SmtlibError("NOOO")
 
     @property
     def result(self):

@@ -2119,35 +2119,35 @@ class Linux(Platform):
         fd = self._open(sock)
         return fd
 
-    def sys_recv(self, sockfd, buf, count, flags):
+    def sys_recv(self, sockfd, buf, count, flags, trace_str="_recv"):
+        data: bytes = bytes()
+        if not self.current.memory.access_ok(slice(buf, buf + count), "w"):
+            logger.info("RECV: buf within invalid memory. Returning EFAULT")
+            return -errno.EFAULT
+
         try:
-            sock = self.files[sockfd]
-        except IndexError:
-            return -errno.EINVAL
+            sock = self._get_fd(sockfd)
+        except FdError:
+            return -errno.EBADF
 
         if not isinstance(sock, Socket):
             return -errno.ENOTSOCK
 
         data = sock.read(count)
+        self.syscall_trace.append((trace_str, sockfd, data))
         self.current.write_bytes(buf, data)
-        self.syscall_trace.append(("_recv", sockfd, data))
 
         return len(data)
 
     def sys_recvfrom(self, sockfd, buf, count, flags, src_addr, addrlen):
-        try:
-            sock = self.files[sockfd]
-        except IndexError:
-            return -errno.EINVAL
+        if src_addr != 0:
+            logger.warning("sys_recvfrom: Unimplemented non-NULL src_addr")
 
-        if not isinstance(sock, Socket):
-            return -errno.ENOTSOCK
+        if addrlen != 0:
+            logger.warning("sys_recvfrom: Unimplemented non-NULL addrlen")
 
-        data = sock.read(count)
-        self.current.write_bytes(buf, data)
-        self.syscall_trace.append(("_recvfrom", sockfd, data))
-
-        return len(data)
+        # TODO Unimplemented src_addr and addrlen, so act like sys_recv
+        return self.sys_recv(sockfd, buf, count, flags, trace_str="_recvfrom")
 
     def sys_send(self, sockfd, buf, count, flags):
         try:
@@ -2267,7 +2267,7 @@ class Linux(Platform):
             if name is not None:
                 raise SyscallNotImplemented(index, name)
             else:
-                raise Exception(f"Bad syscall index, {index}")
+                raise EnvironmentError(f"Bad syscall index, {index}")
 
         return self._syscall_abi.invoke(implementation)
 
@@ -3059,7 +3059,7 @@ class SLinux(Linux):
             return nbytes
         return 0
 
-    def sys_recv(self, sockfd, buf, count, flags):
+    def sys_recv(self, sockfd, buf, count, flags, trace_str="_recv"):
         if issymbolic(sockfd):
             logger.debug("Ask to read from a symbolic file descriptor!!")
             raise ConcretizeArgument(self, 0)
