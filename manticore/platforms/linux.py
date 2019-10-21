@@ -3059,7 +3059,11 @@ class SLinux(Linux):
         :param count: Number of bytes as provided to syscall
         :return: count of symbolic bytes
         """
-        sock = self._get_fd(sockfd)
+        try:
+            sock = self._get_fd(sockfd)
+        except FdError:
+            return -errno.EBADFD
+
         if sock.is_empty() and sock.recv_symbolic:
             nbytes = count if sock.max_recv_symbolic == 0 else min(sock.max_recv_symbolic, count)
             symb = self.constraints.new_array(

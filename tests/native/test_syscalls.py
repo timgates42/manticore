@@ -156,7 +156,11 @@ class LinuxTest(unittest.TestCase):
         self.assertEqual(conn_fd, 4)
 
         sock_obj = self.linux.files[conn_fd]
+
+        # Start with 0 symbolic bytes
         init_len = len(sock_obj.buffer)
+        self.assertEqual(init_len, 0)
+
         BYTES = 5
         wrote = self.linux.sys_recvfrom(conn_fd, 0x1100, BYTES, 0x0, 0x0, 0x0)
         self.assertEqual(wrote, BYTES)
@@ -164,14 +168,10 @@ class LinuxTest(unittest.TestCase):
         wrote = self.linux.sys_recvfrom(conn_fd, 0x0, 100, 0x0, 0x0, 0x0)
         self.assertEqual(wrote, -errno.EFAULT)
 
-        remain_len = init_len - BYTES
-        self.assertEqual(remain_len, len(sock_obj.buffer))
-
-        wrote = self.linux.sys_recvfrom(conn_fd, 0x1100, remain_len + 10, 0x0, 0x0, 0x0)
-        self.assertEqual(wrote, remain_len)
-
-        wrote = self.linux.sys_recvfrom(conn_fd, 0x1100, 10, 0x0, 0x0, 0x0)
-        self.assertEqual(wrote, 0)
+        BYTES = 100
+        wrote = self.linux.sys_recvfrom(conn_fd, 0x1100, BYTES, 0x0, 0x0, 0x0)
+        self.assertNotEquals(wrote, BYTES)
+        self.assertEquals(wrote, sock_obj.max_recv_symbolic)
 
         self.linux.sys_close(conn_fd)
         wrote = self.linux.sys_recvfrom(conn_fd, 0x1100, 10, 0x0, 0x0, 0x0)
