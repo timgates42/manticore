@@ -2135,10 +2135,6 @@ class Linux(Platform):
 
     def sys_recv(self, sockfd, buf, count, flags, trace_str="_recv"):
         data: bytes = bytes()
-        if not self.current.memory.access_ok(slice(buf, buf + count), "w"):
-            logger.info("RECV: buf within invalid memory. Returning EFAULT")
-            return -errno.EFAULT
-
         try:
             sock = self._get_fd(sockfd)
         except FdError:
