@@ -32,7 +32,6 @@ from ..platforms.platform import Platform, SyscallNotImplemented, unimplemented
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T")
 MixedSymbolicBuffer = Union[List[Union[bytes, Expression]], bytes]
 
 
@@ -1255,7 +1254,7 @@ class Linux(Platform):
         else:
             return self.files[fd]
 
-    def _transform_write_data(self, data: T) -> T:
+    def _transform_write_data(self, data: bytes) -> bytes:
         """
         Implement in subclass to transform data written by write(2)/writev(2)
         Nop by default.
@@ -2667,6 +2666,7 @@ class Linux(Platform):
             l, r = Socket.pair()
             self.current.write_int(filedes, self._open(l))
             self.current.write_int(filedes + 4, self._open(r))
+            return 0
         else:
             logger.warning("sys_pipe2 doesn't handle flags")
             return -1
