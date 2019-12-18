@@ -64,7 +64,7 @@ class Visitor:
                     return value
         return self._rebuild(expression, args)
 
-    def visit(self, node_arg, use_fixed_point=False):
+    def visit(self, node, use_fixed_point=False):
         """
         The entry point of the visitor.
         The exploration algorithm is a DFS post-order traversal
@@ -76,10 +76,6 @@ class Visitor:
         :param use_fixed_point: if True, it runs _methods until a fixed point is found
         :type use_fixed_point: Bool
         """
-        if isinstance(node_arg, ArrayProxy):
-            node = node_arg.array
-        else:
-            node = node_arg
 
         cache = self._cache
         visited = set()
@@ -112,12 +108,6 @@ class Visitor:
                 old_value = new_value
                 new_value = self.pop()
 
-            if isinstance(node_arg, ArrayProxy):
-                new_value = ArrayProxy(new_value)
-                new_value._default = node_arg._default
-                new_value._written = set(node_arg.written)
-                new_value._concrete_cache = dict(node_arg._concrete_cache)
-
             self.push(new_value)
 
     @staticmethod
@@ -134,9 +124,10 @@ class Translator(Visitor):
     """ Simple visitor to translate an expression into something else
     """
 
-    def _method(self, expression_arg, *args):
+    def _method(self, expression, *args):
         # Special case. Need to get the unsleeved version of the array
-        expression = expression_arg
+        if isinstance(expression, ArrayProxy):
+            expression = expression.array
 
         assert expression.__class__.__mro__[-1] is object
         for cls in expression.__class__.__mro__:
@@ -488,12 +479,12 @@ class ArithmeticSimplifier(Visitor):
             return a
 
     def visit_BitVecITE(self, expression, *operands):
-        if isinstance(operands[0], Constant):
-            if operands[0].value:
-                result = operands[1]
+        if isinstance(expression.operands[0], Constant):
+            if expression.operands[0].value:
+                result = expression.operands[1]
             else:
-                result = operands[2]
-            new_taint = result._taint | operands[0].taint
+                result = expression.operands[2]
+            new_taint = result._taint | expression.operands[0].taint
             if result._taint != new_taint:
                 result = copy.copy(result)
                 result._taint = new_taint
