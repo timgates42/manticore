@@ -1,5 +1,6 @@
 import hashlib
 import logging
+from typing import Optional
 from contextlib import contextmanager
 
 import capstone
@@ -62,10 +63,10 @@ def output_detectors(detector_classes):
 
 
 class Detector(Plugin):
-    ARGUMENT = None  # argument that needs to be passed to --detect to use given detector
-    HELP = None  # help string
-    IMPACT = None  # DetectorClassification value
-    CONFIDENCE = None  # DetectorClassification value
+    ARGUMENT: Optional[str] = None  # argument that needs to be passed to --detect to use given detector
+    HELP: Optional[str] = None  # help string
+    IMPACT: Optional[int] = None  # DetectorClassification value
+    CONFIDENCE: Optional[int] = None  # DetectorClassification value
 
     @property
     def name(self):
