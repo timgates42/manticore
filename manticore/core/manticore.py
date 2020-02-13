@@ -409,6 +409,7 @@ class ManticoreBase(Eventful):
             return self.stcache[state_id]
         state = self._workspace.load_state(state_id, delete=False)
         state._id = state_id
+        state.manticore = self
         self.forward_events_from(state, True)
         self.stcache[state_id] = state
         return state
