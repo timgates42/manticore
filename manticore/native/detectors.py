@@ -63,7 +63,9 @@ def output_detectors(detector_classes):
 
 
 class Detector(Plugin):
-    ARGUMENT: Optional[str] = None  # argument that needs to be passed to --detect to use given detector
+    ARGUMENT: Optional[
+        str
+    ] = None  # argument that needs to be passed to --detect to use given detector
     HELP: Optional[str] = None  # help string
     IMPACT: Optional[int] = None  # DetectorClassification value
     CONFIDENCE: Optional[int] = None  # DetectorClassification value
