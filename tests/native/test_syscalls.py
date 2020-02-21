@@ -7,6 +7,7 @@ import errno
 
 from manticore.core.smtlib import *
 from manticore.platforms import linux, linux_syscall_stubs
+from manticore.platforms.linux import SymbolicSocket
 from manticore.platforms.platform import SyscallNotImplemented
 
 
@@ -156,23 +157,32 @@ class LinuxTest(unittest.TestCase):
         self.assertEqual(conn_fd, 4)
 
         sock_obj = self.linux.files[conn_fd]
+        # Any socket that comes from an accept, should probably be symbolic for now
+        assert isinstance(sock_obj, SymbolicSocket)
 
         # Start with 0 symbolic bytes
         init_len = len(sock_obj.buffer)
         self.assertEqual(init_len, 0)
 
+        # Try to receive 5 symbolic bytes
         BYTES = 5
         wrote = self.linux.sys_recvfrom(conn_fd, 0x1100, BYTES, 0x0, 0x0, 0x0)
         self.assertEqual(wrote, BYTES)
 
+        # Try to receive into address 0x0
         wrote = self.linux.sys_recvfrom(conn_fd, 0x0, 100, 0x0, 0x0, 0x0)
         self.assertEqual(wrote, -errno.EFAULT)
 
-        BYTES = 100
+        # Try to receive 100 bytes
+        recvd_bytes = sock_obj.recv_pos
+        remaining_bytes = sock_obj.max_recv_symbolic - sock_obj.recv_pos
+        # Try to receive all remaining symbolic bytes plus some more
+        BYTES = remaining_bytes + 10
         wrote = self.linux.sys_recvfrom(conn_fd, 0x1100, BYTES, 0x0, 0x0, 0x0)
-        self.assertNotEquals(wrote, BYTES)
-        self.assertEquals(wrote, sock_obj.max_recv_symbolic)
+        self.assertNotEqual(wrote, BYTES)
+        self.assertEqual(wrote, remaining_bytes)
 
+        # Close and make sure we can't write more stuff
         self.linux.sys_close(conn_fd)
         wrote = self.linux.sys_recvfrom(conn_fd, 0x1100, 10, 0x0, 0x0, 0x0)
         self.assertEqual(wrote, -errno.EBADF)
