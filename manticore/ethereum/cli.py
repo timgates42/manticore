@@ -16,7 +16,7 @@ from .detectors import (
 )
 from ..core.plugin import Profiler
 from .manticore import ManticoreEVM
-from .plugins import FilterFunctions, LoopDepthLimiter, VerboseTrace, KeepOnlyIfStorageChanges
+from .plugins import FilterFunctions, LoopDepthLimiter, VerboseTrace, KeepOnlyIfStorageChanges, BuildCFG
 from ..utils.nointerrupt import WithKeyboardInterruptAs
 from ..utils import config
 

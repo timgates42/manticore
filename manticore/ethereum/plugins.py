@@ -100,7 +100,7 @@ class LoopDepthLimiter(Plugin):
         with self.manticore.locked_context("seen_rep", dict) as reps:
             reps.clear()
 
-    def will_execute_instruction_callback(self, state, pc, insn):
+    def will_evm_execute_instruction_callback(self, state, pc, insn):
         world = state.platform
         with self.manticore.locked_context("seen_rep", dict) as reps:
             item = (
@@ -218,3 +218,112 @@ class KeepOnlyIfStorageChanges(Plugin):
                 stream.write(
                     "State was removed from ready list because the last tx did not write to the storage"
                 )
+
+
+class BuildCFG(Plugin):
+    def will_evm_execute_instruction_callback(self, state, insn, args):
+        world = state.platform
+        # A basic block is composed by a sequence of instructions
+
+        depth = world.current_transaction.depth
+        # is_create is true is excuting the initialization bytecode
+        is_create = world.current_transaction.sort == "CREATE"
+        address = world.current_transaction.address
+        #The current bytecode is described is_create and the current account address
+        current_bytecode_descriptor = (depth, is_create, address)
+        # As one contract can call another there could be several bb in construction
+        current_bb_db = state.context.get('cfg_current_bb_db', dict())
+        current_bb = current_bb_db.get(current_bytecode_descriptor, [])
+        current_bb.append(insn)
+
+        # We save th eprevious BB for each byteecode in execution
+        prev_bb_id_db = state.context.get('cfg_previous_bb_id_db', dict())
+        prev_bb_id = prev_bb_id_db.get(current_bytecode_descriptor, None)
+
+        #Finishing a basic block
+        if insn.is_terminator:
+            current_bb = tuple(current_bb)
+            current_bb_id = current_bb[0].pc
+
+            #Add current terminated bb to the successor list of prev bb if exists
+            if prev_bb_id is not None:
+                with self.manticore.locked_context("cfg_CFGDB", dict) as cfgdb:
+                    cfg = cfgdb.get((is_create, address), {})
+                    successors = cfg.get(prev_bb_id, set())
+                    successors.add(current_bb_id)
+                    cfg[prev_bb_id] = successors
+                    cfgdb[(is_create, address)] = cfg
+            #Add basic block
+            with self.manticore.locked_context("cfg_BBDB", dict) as bbdb:
+                bbs = bbdb.get((is_create, address),[])
+                if current_bb not in bbs:
+                    bbs.append(current_bb)
+                bbdb[(is_create, address)]=bbs
+
+            if not insn.is_endtx:
+                prev_bb_id_db[current_bytecode_descriptor] = current_bb_id
+            else:
+                if prev_bb_id is not None:
+                    del prev_bb_id_db[current_bytecode_descriptor]
+
+            current_bb = []
+
+
+        current_bb_db[current_bytecode_descriptor] = current_bb
+        state.context['cfg_current_bb_db']=current_bb_db
+        state.context['cfg_previous_bb_id_db'] = prev_bb_id_db
+
+    def get_cfg(self, account=None, runtime=True):
+        """ Generate a NetworkX graph for the CFG """
+        if account is None:
+            raise Exception("Need to specify account")
+        import networkx as nx
+        G = nx.DiGraph()
+        bytecode_descriptor = (not runtime, int(account))
+        BBS = {}
+        with self.manticore.locked_context("cfg_BBDB", list) as bbdb:
+            bbs = bbdb[bytecode_descriptor]
+            for bb in bbs:
+                G.add_node(bb)
+                BBS[bb[0].pc] = bb
+        with self.manticore.locked_context("cfg_CFGDB", dict) as cfgdb:
+            cfg = cfgdb[bytecode_descriptor]
+            for node_id, successor_ids in dict(cfg).items():
+                if node_id is None:
+                    continue
+                for succ_id in successor_ids:
+                    G.add_edge(BBS[node_id], BBS[succ_id])
+        return G
+
+    def get_dot(self, account=None, runtime=True):
+        """ Generate a dof graph for the CFG """
+        if account is None:
+            raise Exception("Need to specify account")
+        bytecode_descriptor = (not runtime, int(account))
+
+        d = """
+        digraph g {
+          graph [fontsize=30 labelloc="t" label="" splines=true overlap=false rankdir = "LR"];
+          ratio = auto;
+          """
+
+        with self.manticore.locked_context("cfg_BBDB", list) as bbdb:
+            bbs = bbdb[bytecode_descriptor]
+            for bb in bbs:
+                id = bb[0].pc
+
+                table = """<table border="0" cellborder="0" cellpadding="3" bgcolor="white">"""
+                for i in bb:
+                    table += f"""<tr><td align="left">{i.pc}: {i.name}</td></tr>"""
+                table += """</table>"""
+                d += f"""  "{id}" [ style = "filled, bold" penwidth = 4 fillcolor = "white" fontname = "Courier New" shape = "Mrecord" label =<{table}> ];\n"""
+
+            with self.manticore.locked_context("cfg_CFGDB", dict) as cfgdb:
+                cfg = cfgdb[bytecode_descriptor]
+                for node_id, successor_ids in dict(cfg).items():
+                    if node_id is None:
+                        continue
+                    for succ_id in successor_ids:
+                        d += f' {node_id}-> {succ_id}[penwidth = 5];\n'
+        d += "}"
+        return d
