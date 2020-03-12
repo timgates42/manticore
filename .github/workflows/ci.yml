@@ -163,8 +163,8 @@ jobs:
             # but Manticore fails to explore the paths due to the lack of the 0x1f opcode support
             # see https://github.com/trailofbits/manticore/issues/1166
             # if [ "$(ls output/*tx -l | wc -l)" != "41" ]; then
-            if [ "$(ls output/*tx -l | wc -l)" != "13" ]; then
-                echo "Truffle test failed" `ls output/*tx -l | wc -l` "!= 13"
+            if [ "$(ls output/*tx -l | wc -l)" != "34" ]; then
+                echo "Truffle test failed" `ls output/*tx -l | wc -l` "!= 34"
                 return 1
             fi
             echo "Truffle test succeded"
@@ -203,7 +203,7 @@ jobs:
                 run_tests_from_dir $TEST_TYPE
                 RV=$?
 
-          echo "Running truffle test"
+                echo "Running truffle test"
                 install_truffle
                 run_truffle_tests
                 RV=$(($RV + $?))
@@ -224,34 +224,11 @@ jobs:
                 run_tests_from_dir $TEST_TYPE
                 RV=$?
                 ;;
-
             examples)
                 run_examples
                 ;;
-
-            all)
-                echo "Running all tests registered in travis_test.sh: examples, native, ethereum, ethereum_vm, other";
-
-                # Functions should return 0 on success and 1 on failure
-                RV=0
-                run_tests_from_dir native
-                RV=$(($RV + $?))
-                run_tests_from_dir ethereum
-                RV=$(($RV + $?))
-                make_vmtests; run_tests_from_dir ethereum_vm
-                RV=$(($RV + $?))
-                make_wasm_tests; run_tests_from_dir wasm
-                RV=$(($RV + $?))
-                make_wasm_sym_tests; run_tests_from_dir wasm_sym
-                RV=$(($RV + $?))
-                run_tests_from_dir other
-                RV=$(($RV + $?))
-                run_examples
-                RV=$(($RV + $?))
-                ;;
-
             *)
-                echo "Usage: $0 [examples|native|ethereum|ethereum_vm|other|all]"
+                echo "Unknown TEST_TYPE: '$TEST_TYPE'"
                 exit 3;
                 ;;
         esac
