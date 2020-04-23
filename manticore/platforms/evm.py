@@ -29,6 +29,7 @@ from ..core.smtlib import (
 )
 from ..core.state import Concretize, TerminateState
 from ..utils.event import Eventful
+from ..utils.helpers import printable_bytes
 from ..utils import config
 from ..core.smtlib.visitors import simplify
 from ..exceptions import EthereumError
@@ -242,8 +243,10 @@ class Transaction:
             return_data = conc_tx.return_data
 
             stream.write(
-                "Return_data: 0x{} {}\n".format(
-                    binascii.hexlify(return_data).decode(), flagged(issymbolic(self.return_data))
+                "Return_data: 0x{} ({}) {}\n".format(
+                    binascii.hexlify(return_data).decode(),
+                    printable_bytes(return_data),
+                    flagged(issymbolic(self.return_data))
                 )
             )
 
@@ -310,7 +313,7 @@ class Transaction:
     @sort.setter
     def sort(self, sort):
         if sort not in {"CREATE", "CALL", "DELEGATECALL"}:
-            raise EVMException("Invalid transaction type")
+            raise EVMException(f"Invalid transaction type: {sort}")
         self._sort = sort
 
     @property
@@ -781,7 +784,7 @@ class EVM(Eventful):
 
     @property
     def gas(self):
-        return self._gas
+        return Operators.EXTRACT(self._gas, 0, 256)
 
     def __getstate__(self):
         state = super().__getstate__()
@@ -1184,7 +1187,7 @@ class EVM(Eventful):
         if isinstance(should_check_jumpdest, Constant):
             should_check_jumpdest = should_check_jumpdest.value
         elif issymbolic(should_check_jumpdest):
-            should_check_jumpdest_solutions = Z3Solver().get_all_values(
+            should_check_jumpdest_solutions = Z3Solver.instance().get_all_values(
                 self.constraints, should_check_jumpdest
             )
             if len(should_check_jumpdest_solutions) != 1:
@@ -1732,7 +1735,7 @@ class EVM(Eventful):
         self._consume(copyfee)
 
         if issymbolic(size):
-            max_size = Z3Solver().max(self.constraints, size)
+            max_size = Z3Solver.instance().max(self.constraints, size)
         else:
             max_size = size
 
@@ -1934,7 +1937,7 @@ class EVM(Eventful):
     def GAS(self):
         """Get the amount of available gas, including the corresponding reduction the amount of available gas"""
         # fixme calculate gas consumption
-        return Operators.EXTRACT(self._gas, 0, 256)
+        return self.gas
 
     def JUMPDEST(self):
         """Mark a valid destination for jumps"""
@@ -2127,7 +2130,7 @@ class EVM(Eventful):
         # FIXME for on the known addresses
         if issymbolic(recipient):
             logger.info("Symbolic recipient on self destruct")
-            recipient = Z3Solver().get_value(self.constraints, recipient)
+            recipient = Z3Solver.instance().get_value(self.constraints, recipient)
 
         if recipient not in self.world:
             self.world.create_account(address=recipient)
