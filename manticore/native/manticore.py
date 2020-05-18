@@ -15,6 +15,7 @@ from .detectors import Detector
 from ..core.manticore import ManticoreBase
 from ..core.smtlib import ConstraintSet
 from ..core.smtlib.solver import Z3Solver, issymbolic
+from ..exceptions import ManticoreError
 from ..utils import log, config
 
 logger = logging.getLogger(__name__)
@@ -455,7 +456,7 @@ def _make_linux(
     concrete_start="",
     pure_symbolic=False,
     stdin_size=None,
-):
+) -> State:
     from ..platforms import linux
 
     env = {} if env is None else env
