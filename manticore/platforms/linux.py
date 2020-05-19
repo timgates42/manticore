@@ -357,6 +357,15 @@ class Directory(FdLike):
     def mode(self) -> str:
         return mode_from_flags(self.flags)
 
+    def stat(self):
+        try:
+            return os.fstat(self.fileno())
+        except OSError as e:
+            return -e.errno
+
+    def fileno(self) -> int:
+        return self.fd
+
     def tell(self) -> int:
         return 0
 
