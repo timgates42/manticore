@@ -762,7 +762,7 @@ class SymbolicSocket(Socket):
             self._symb_len = self._constraints.new_bitvec(
                 8, "_socket_symb_len", avoid_collisions=True
             )
-            self._constraints.add(Operators.AND(self._symb_len >= 1, self._symb_len < rx_bytes))
+            self._constraints.add(Operators.AND(self._symb_len >= 1, self._symb_len <= rx_bytes))
 
             def setstate(state: State, value):
                 state.platform.fd_table.get_fdlike(self.fd)._symb_len = value
