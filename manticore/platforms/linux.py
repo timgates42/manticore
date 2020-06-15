@@ -27,7 +27,7 @@ from . import linux_syscalls
 from .linux_syscall_stubs import SyscallStubs
 from ..core.state import TerminateState, Concretize
 from ..core.smtlib import ConstraintSet, Operators, Expression, issymbolic, ArrayProxy
-from ..core.smtlib.solver import Z3Solver
+from ..core.smtlib.solver import SelectedSolver
 from ..exceptions import SolverError
 from ..native.cpu.abstractcpu import Cpu, Syscall, ConcretizeArgument, Interruption
 from ..native.cpu.cpufactory import CpuFactory
@@ -2343,7 +2343,7 @@ class Linux(Platform):
             size = cpu.read_int(iov + i * sizeof_iovec + (sizeof_iovec // 2), ptrsize)
 
             if issymbolic(size):
-                size = Z3Solver.instance().get_value(self.constraints, size)
+                size = SelectedSolver.instance().get_value(self.constraints, size)
 
             data = [Operators.CHR(cpu.read_int(buf + i, 8)) for i in range(size)]
             data = self._transform_write_data(data)
@@ -3312,7 +3312,7 @@ class SLinux(Linux):
         for c in data:
             if issymbolic(c):
                 bytes_concretized += 1
-                c = bytes([Z3Solver.instance().get_value(self.constraints, c)])
+                c = bytes([SelectedSolver.instance().get_value(self.constraints, c)])
             concrete_data += cast(bytes, c)
 
         if bytes_concretized > 0:
@@ -3324,7 +3324,7 @@ class SLinux(Linux):
 
     def sys_exit_group(self, error_code):
         if issymbolic(error_code):
-            error_code = Z3Solver.instance().get_value(self.constraints, error_code)
+            error_code = SelectedSolver.instance().get_value(self.constraints, error_code)
             return self._exit(
                 f"Program finished with exit status: {ctypes.c_int32(error_code).value} (*)"
             )
@@ -3616,7 +3616,7 @@ class SLinux(Linux):
             try:
                 for c in data:
                     if issymbolic(c):
-                        c = Z3Solver.instance().get_value(self.constraints, c)
+                        c = SelectedSolver.instance().get_value(self.constraints, c)
                     fd.write(make_chr(c))
             except SolverError:
                 fd.write("{SolverError}")

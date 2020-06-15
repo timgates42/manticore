@@ -14,7 +14,7 @@ from .state import State
 from .detectors import Detector
 from ..core.manticore import ManticoreBase
 from ..core.smtlib import ConstraintSet
-from ..core.smtlib.solver import Z3Solver, issymbolic
+from ..core.smtlib.solver import SelectedSolver, issymbolic
 from ..exceptions import ManticoreError
 from ..utils import log, config
 
@@ -224,7 +224,7 @@ class Manticore(ManticoreBase):
         # This will interpret the buffer specification written in INTEL ASM.
         # (It may dereference pointers)
         assertion = parse(program, state.cpu.read_int, state.cpu.read_register)
-        if not Z3Solver.instance().can_be_true(state.constraints, assertion):
+        if not SelectedSolver.instance().can_be_true(state.constraints, assertion):
             logger.info(str(state.cpu))
             logger.info(
                 "Assertion %x -> {%s} does not hold. Aborting state.", state.cpu.pc, program
