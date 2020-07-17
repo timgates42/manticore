@@ -11,7 +11,6 @@ from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
 
 from .state import State
-from .detectors import Detector
 from ..core.manticore import ManticoreBase
 from ..core.smtlib import ConstraintSet
 from ..core.smtlib.solver import SelectedSolver, issymbolic
@@ -22,17 +21,6 @@ logger = logging.getLogger(__name__)
 
 consts = config.get_group("native")
 consts.add("stdin_size", default=256, description="Maximum symbolic stdin size")
-
-
-def write_findings(method, lead_space, pc):
-    """
-    Writes binary's program counter where the finding happened.
-    :param method: pointer to the object with the write method
-    :param lead_space: leading white space
-    :param pc: program counter
-    :return: pass
-    """
-    method.write(f"{lead_space}Program counter: {pc:#x}\n")
 
 
 class Manticore(ManticoreBase):
@@ -53,8 +41,6 @@ class Manticore(ManticoreBase):
             initial_state = path_or_state
 
         super().__init__(initial_state, workspace_url=workspace_url, policy=policy, **kwargs)
-
-        self.detectors = {}
 
         # Move the following into a linux plugin
         self._assertions = {}
@@ -109,19 +95,6 @@ class Manticore(ManticoreBase):
         :param testcase: Test case object
         :param message: Accompanying message
         """
-        # Collect everything our detector(s) have found
-        local_findings = set()
-        for detector in self.detectors.values():
-            for pc, finding, constraint in detector.get_findings(state):
-                if (pc, finding) not in local_findings:
-                    local_findings.add((pc, finding, constraint))
-
-        if len(local_findings):
-            with testcase.open_stream("findings") as findings:
-                for pc, finding, constraint in local_findings:
-                    findings.write(f"- {finding} -\n")
-                    write_findings(findings, "  ", pc)
-
         self._output.save_testcase(state, testcase, message)
 
     @classmethod
@@ -233,38 +206,6 @@ class Manticore(ManticoreBase):
 
         # Everything is good add it.
         state.constraints.add(assertion)
-
-    ###############################
-    # Detectors
-    ###############################
-    def register_detector(self, d):
-        """
-        Unregisters a plugin. This will invoke detector's `on_unregister` callback.
-        Shall be called after `.finalize`.
-        """
-        if not isinstance(d, Detector):
-            raise ManticoreError("Not a Detector")
-        if d.name in self.detectors:
-            raise ManticoreError("Detector already registered")
-        self.detectors[d.name] = d
-        self.register_plugin(d)
-        return d.name
-
-    def unregister_detector(self, d):
-        """
-        Unregisters a detector. This will invoke detector's `on_unregister` callback.
-        Shall be called after `.finalize` - otherwise, finalize won't add detector's finding to `global.findings`.
-        """
-        if not isinstance(d, (Detector, str)):
-            raise ManticoreError("Not a Detector")
-        name = d
-        if isinstance(d, Detector):
-            name = d.name
-        if name not in self.detectors:
-            raise ManticoreError("Detector not registered")
-        d = self.detectors[name]
-        del self.detectors[name]
-        self.unregister_plugin(d)
 
     ###############################
     # Hook Callback Methods
