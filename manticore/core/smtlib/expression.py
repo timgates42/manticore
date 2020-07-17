@@ -504,6 +504,13 @@ class BitVecConstant(BitVec):
     def value(self):
         return self._value
 
+    @property
+    def signed_value(self):
+        if self._value & self.signmask:
+            return self._value - (1 << self.size)
+        else:
+            return self._value
+
 
 class BitVecOperation(BitVec):
     __slots__ = ["_operands"]
@@ -959,8 +966,29 @@ class ArrayStore(ArrayOperation):
     def value(self):
         return self.operands[2]
 
+    def __getstate__(self):
+        state = {}
+        array = self
+        items = []
+        while isinstance(array, ArrayStore):
+            items.append((array.index, array.value))
+            array = array.array
+        state["_array"] = array
+        state["_items"] = items
+        return state
 
-class ArraySlice(Array):
+    def __setstate__(self, state):
+        array = state["_array"]
+        for index, value in reversed(state["_items"][0:]):
+            array = array.store(index, value)
+        self._index_bits = array.index_bits
+        self._index_max = array.index_max
+        self._value_bits = array.value_bits
+        index, value = state["_items"][0]
+        self._operands = (array, index, value)
+
+
+class ArraySlice(ArrayOperation):
     def __init__(
         self, array: Union["Array", "ArrayProxy"], offset: int, size: int, *args, **kwargs
     ):
@@ -968,23 +996,22 @@ class ArraySlice(Array):
             raise ValueError("Array expected")
         if isinstance(array, ArrayProxy):
             array = array._array
-        super().__init__(array.index_bits, array.index_max, array.value_bits, *args, **kwargs)
+        super().__init__(array, **kwargs)
 
-        self._array = array
         self._slice_offset = offset
         self._slice_size = size
 
     @property
-    def underlying_variable(self):
-        return self._array.underlying_variable
+    def array(self):
+        return self.operands[0]
 
     @property
-    def operands(self):
-        return self._array.operands
+    def underlying_variable(self):
+        return self.array.underlying_variable
 
     @property
     def index_bits(self):
-        return self._array.index_bits
+        return self.array.index_bits
 
     @property
     def index_max(self):
@@ -992,18 +1019,14 @@ class ArraySlice(Array):
 
     @property
     def value_bits(self):
-        return self._array.value_bits
-
-    @property
-    def taint(self):
-        return self._array.taint
+        return self.array.value_bits
 
     def select(self, index):
-        return self._array.select(index + self._slice_offset)
+        return self.array.select(index + self._slice_offset)
 
     def store(self, index, value):
         return ArraySlice(
-            self._array.store(index + self._slice_offset, value),
+            self.array.store(index + self._slice_offset, value),
             self._slice_offset,
             self._slice_size,
         )
@@ -1048,7 +1071,7 @@ class ArrayProxy(Array):
 
     @property
     def operands(self):
-        return self._array.operands
+        return (self._array,)
 
     @property
     def index_bits(self):
@@ -1124,7 +1147,6 @@ class ArrayProxy(Array):
         state["_array"] = self._array
         state["name"] = self.name
         state["_concrete_cache"] = self._concrete_cache
-        state["_written"] = self._written
         return state
 
     def __setstate__(self, state):
@@ -1132,7 +1154,7 @@ class ArrayProxy(Array):
         self._array = state["_array"]
         self._name = state["name"]
         self._concrete_cache = state["_concrete_cache"]
-        self._written = state["_written"]
+        self._written = None
 
     def __copy__(self):
         return ArrayProxy(self)
@@ -1145,13 +1167,13 @@ class ArrayProxy(Array):
             # take out Proxy sleve
             array = self._array
             offset = 0
-            while isinstance(array, ArraySlice):
-                # if it is a proxy over a slice take out the slice too
-                offset += array._slice_offset
-                array = array._array
             while not isinstance(array, ArrayVariable):
-                # The index written to underlaying Array are displaced when sliced
-                written.add(array.index - offset)
+                if isinstance(array, ArraySlice):
+                    # if it is a proxy over a slice take out the slice too
+                    offset += array._slice_offset
+                else:
+                    # The index written to underlaying Array are displaced when sliced
+                    written.add(array.index - offset)
                 array = array.array
             assert isinstance(array, ArrayVariable)
             self._written = written
